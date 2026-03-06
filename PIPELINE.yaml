@@ -1,0 +1,146 @@
+Python Pipeline Document (API + Parsing, DB-Agnostic v1)
+
+  Use a local SQLite .db first. It is the right move while Firebase vs Supabase is undecided.
+  Design the pipeline with a storage/repository interface so DB swap is adapter-only.
+
+  1) Scope
+
+  - Input formats: pdf, csv, xlsx, png, jpg, jpeg, heic
+  - Output: normalized unverified rows + confidence + validation flags
+  - Human review happens later in Vite; this pipeline only produces review-ready data
+  - API-first; no Python UI coupling required
+
+  2) Core architecture
+
+  - api/ HTTP endpoints
+  - workers/ async job processor
+  - parsers/ file-type parsers
+  - normalizers/ canonical schema mapping
+  - validators/ cross-checks and anomaly flags
+  - storage/ repository adapters (sqlite, later firebase/supabase)
+  - models/ Pydantic request/response and internal types
+
+  3) Canonical entities
+
+  - IngestionJob
+  - Document
+  - ExtractedRow
+  - ReviewEvent (optional now, useful later)
+  - VerifiedRecord (not required for first pipeline build)
+
+  4) Job states to simulate now
+
+  - queued
+  - processing
+  - parsed_unverified
+  - needs_review
+  - failed
+
+  5) Row states
+
+  - pending
+  - approved
+  - edited
+  - rejected
+    (You can store these now even before frontend integration.)
+
+  6) SQLite-first storage plan
+
+  - Use pipeline_local.db
+  - Keep raw files in local folder: data/raw/{job_id}/...
+  - Keep extracted artifacts: data/artifacts/{job_id}/...
+  - Persist normalized rows in SQLite
+  - Add checksum and idempotency_key to avoid duplicate ingestion
+
+  7) API contract (build these first)
+
+  - POST /v1/documents/upload
+  - POST /v1/jobs/{job_id}/start
+  - GET /v1/jobs/{job_id}
+  - GET /v1/jobs/{job_id}/rows
+  - GET /v1/jobs (filter by status/source/user)
+  - POST /v1/jobs/{job_id}/retry
+  - GET /health
+
+  8) Parsing pipeline flow
+
+  1. Upload file and create job + document
+  2. Detect file type via MIME + extension + magic bytes
+  3. Route parser:
+
+  - csv/xlsx -> deterministic parser first
+  - text pdf -> text/table extractor
+  - scanned pdf/images -> Textract OCR/layout
+  - ambiguous fields -> QwenVL normalization fallback
+
+  4. Normalize to canonical transaction/holding rows
+  5. Run validators and assign flags/confidence
+  6. Save rows as pending, set job needs_review
+
+  9) Confidence strategy
+
+  - Per-field confidence (0.0–1.0)
+  - Per-row confidence (weighted aggregate)
+  - Job summary confidence (avg/min/flagged_count)
+  - Suggested thresholds:
+  - >=0.90 high
+  - 0.75-0.89 medium
+  - <0.75 low/flagged
+
+  10) Validation checks
+
+  - Required fields present (date, amount, description for transactions)
+  - Currency format validity
+  - Debit/credit sign consistency
+  - Date in statement range
+  - Totals/balance consistency when summary exists
+  - Duplicate row detection within same document
+
+  11) Minimal folder layout
+
+  python-pipeline/
+    app/
+      api/
+      workers/
+      parsers/
+      normalizers/
+      validators/
+      storage/
+      models/
+      services/
+    data/
+      raw/
+      artifacts/
+    tests/
+    alembic/ (optional, recommended)
+    requirements.txt
+    .env
+
+  12) What I need from you to tailor v1 exactly
+
+  - Your preferred API framework: FastAPI or Gradio API wrappers
+  - Expected max file size and concurrency target
+  - Priority source types for first release: bank, broker, crypto
+  - Sample documents for each format (redacted is fine)
+  - Current model invocation interface for QwenVL (CLI, Python class, REST)
+  - Textract mode you already use (sync/async, table/forms config)
+
+  13) Recommended implementation order
+
+  1. Define Pydantic schemas and state enums
+  2. Implement SQLite repository + local file storage
+  3. Implement upload and job lifecycle endpoints
+  4. Implement CSV/XLSX deterministic parser
+  5. Implement PDF text + OCR route
+  6. Add QwenVL fallback normalizer
+  7. Add confidence + validation
+  8. Add retry/idempotency + tests
+
+  14) Migration path later (no rewrite)
+
+  - Keep repository interface stable
+  - Replace SQLiteRepository with FirebaseRepository or SupabaseRepository
+  - Keep parser/normalizer/validator untouched
+  - Keep API contracts unchanged for Vite integration
+
+  If you want, next I can give you the exact SQL schema (CREATE TABLE set) and Pydantic models so your team can start coding immediately in the other directory.
