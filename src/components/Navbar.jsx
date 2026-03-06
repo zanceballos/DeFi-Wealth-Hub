@@ -4,7 +4,7 @@ import {useAppContext} from '../context/AppContext'
 const TABS = [
     {label: 'Home', path: '/'},
     {label: 'Portfolio', path: '/portfolio'},
-    {label: 'Transactions', path: '/transactions'},
+    {label: 'Transactionsssss', path: '/transactions'},
 ]
 
 export default function Navbar() {
