@@ -3,8 +3,8 @@ import Navbar from './components/Navbar'
 
 function App() {
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 py-6 sm:px-6 sm:py-10">
+    <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 text-slate-900">
+      <div className="mx-auto flex min-h-screen w-full max-w-none flex-col px-3 py-4 sm:px-6 sm:py-6">
         <Navbar />
         <Outlet />
       </div>

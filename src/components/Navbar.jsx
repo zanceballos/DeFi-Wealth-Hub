@@ -47,7 +47,7 @@ function Navbar() {
   }, [isMobileNavOpen])
 
   return (
-    <header className="mb-8 sm:mb-10">
+    <header className="relative z-50 mb-8 sm:mb-10">
       <div className="flex items-center justify-between gap-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         <span className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 sm:justify-self-start sm:text-sm">
           DeFi Wealth Hub
@@ -58,7 +58,7 @@ function Navbar() {
             to="/"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
+                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
               }`
             }
           >
@@ -68,7 +68,7 @@ function Navbar() {
             to="/advisory"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
+                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
               }`
             }
           >
@@ -78,7 +78,7 @@ function Navbar() {
             to="/privacy"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
+                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
               }`
             }
           >
@@ -111,7 +111,7 @@ function Navbar() {
             {isMenuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-11 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:top-12 sm:w-44"
+                className="absolute right-0 top-11 z-50 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:top-12 sm:w-44"
               >
                 <button
                   type="button"
@@ -141,7 +141,7 @@ function Navbar() {
       </div>
 
       <div
-        className={`fixed inset-0 z-40 sm:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 z-50 sm:hidden transition-opacity duration-300 ${
           isMobileNavOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
         aria-hidden={!isMobileNavOpen}
@@ -180,7 +180,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
                 }`
               }
             >
@@ -191,7 +191,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
                 }`
               }
             >
@@ -202,7 +202,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
                 }`
               }
             >
