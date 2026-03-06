@@ -1,10 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { useAuthContext } from '../hooks/useAuthContext'
 
 function Navbar() {
+  const { user, profile, logout } = useAuthContext()
+  const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
   const menuRef = useRef(null)
+
+  // Derive initials from profile name or user email
+  const initials = (() => {
+    if (profile?.name) {
+      const parts = profile.name.trim().split(/\s+/)
+      return (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')
+    }
+    if (user?.displayName) {
+      const parts = user.displayName.trim().split(/\s+/)
+      return (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')
+    }
+    if (user?.email) return user.email[0]
+    return '?'
+  })().toUpperCase()
+
+  async function handleLogout() {
+    setIsMenuOpen(false)
+    await logout()
+    navigate('/login')
+  }
 
   function closeMobileNav() {
     setIsMobileNavOpen(false)
@@ -58,7 +81,7 @@ function Navbar() {
             to="/"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
+                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
               }`
             }
           >
@@ -68,7 +91,7 @@ function Navbar() {
             to="/advisory"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
+                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
               }`
             }
           >
@@ -78,7 +101,7 @@ function Navbar() {
             to="/privacy"
             className={({ isActive }) =>
               `rounded-md px-3 py-1.5 transition ${
-                isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-200'
+                isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
               }`
             }
           >
@@ -105,7 +128,7 @@ function Navbar() {
               aria-expanded={isMenuOpen}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-100 sm:h-10 sm:w-10 sm:text-sm"
             >
-              UI
+              {initials}
             </button>
 
             {isMenuOpen && (
@@ -113,13 +136,6 @@ function Navbar() {
                 role="menu"
                 className="absolute right-0 top-11 z-50 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:top-12 sm:w-44"
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="w-full rounded-lg px-3 py-2 text-left text-slate-700 transition hover:bg-slate-100"
-                >
-                  Sign in
-                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -133,6 +149,15 @@ function Navbar() {
                   className="w-full rounded-lg px-3 py-2 text-left text-slate-700 transition hover:bg-slate-100"
                 >
                   Help Center
+                </button>
+                <div className="my-1 h-px bg-slate-200" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleLogout}
+                  className="w-full rounded-lg px-3 py-2 text-left text-red-600 transition hover:bg-red-50"
+                >
+                  Log out
                 </button>
               </div>
             )}
@@ -180,7 +205,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
+                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
                 }`
               }
             >
@@ -191,7 +216,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
+                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
                 }`
               }
             >
@@ -202,7 +227,7 @@ function Navbar() {
               onClick={closeMobileNav}
               className={({ isActive }) =>
                 `rounded-lg px-4 py-3 transition ${
-                  isActive ? 'bg-brand-primary text-white' : 'text-slate-700 hover:text-brand-primary hover:bg-slate-100'
+                  isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
                 }`
               }
             >
