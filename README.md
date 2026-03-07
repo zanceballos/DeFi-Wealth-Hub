@@ -4,6 +4,8 @@
 ![Vite](https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E)
 ![Firebase](https://img.shields.io/badge/firebase-ffca28?style=for-the-badge&logo=firebase&logoColor=black)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq_AI-f3f4f6?style=for-the-badge&logoColor=f97316)
+![InternVL](https://img.shields.io/badge/InternVL-000000?style=for-the-badge&logoColor=white)
 
 ## 👨‍💻 The Team
 
@@ -11,8 +13,8 @@ Designed and developed by students from Nanyang Technological University (NTU):
 
 | Name | Major | GitHub |
 | :--- | :--- | :--- |
-| **Muhammad Izzan** | Computer Science | [@zanceballos](https://github.com/zanceballos) |
 | **Nicholas** | Computer Science | [@nicolotan](https://github.com/nicolotan) |
+| **Izzan** | Computer Science | [@zanceballos](https://github.com/zanceballos) |
 | **Kang** | Computer Science | [@lowkangxuan](https://github.com/lowkangxuan) |
 | **Li Zhong** | Electrical & Electronic Engineering | [@Shoterz](https://github.com/Shoterz) |
 | **Zheng Rong** | Computer Engineering | [@Caspian616](https://github.com/Caspian616) |
