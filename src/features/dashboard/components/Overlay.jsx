@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useState} from "react";
 import {createPortal} from "react-dom";
-import {processStatementAndRefreshMetrics} from '../../../services/financialDataService.js'
+import {recomputeWellness, upsertNetWorthHistory} from '../../../services/financialDataService.js'
+import {ingestStatementToFirestore} from '../../../services/statementIngestionService.js'
 import {useAuthContext} from '../../../hooks/useAuthContext.js'
 
 const API_BASE_URL = import.meta.env.VITE_PIPELINE_API_BASE_URL ?? 'https://defi-api.stocksuite.app'
@@ -327,61 +328,30 @@ export default function Overlay({ onSaveSuccess, externalOpen, onExternalClose }
         setIsSavingToFirebase(true)
         setErrorMessage('')
         try {
-            // If no real file was selected, create a synthetic placeholder and skip Storage upload
-            const hasRealFile = !!selectedFile
-            const fileToUpload = selectedFile ?? new File(
-                [new Blob([JSON.stringify({ rows: rowsToSave.map(r => r.normalizedPayload) }, null, 2)], { type: 'application/json' })],
-                'statement-export.json',
-                { type: 'application/json' },
-            )
+            const fileToUpload = selectedFile ?? null
 
-            // Aggregate parsed data from rows
-            let totalCredits = 0
-            let totalDebits = 0
-            let cryptoTotal = 0
-            for (const row of rowsToSave) {
-                const amount = Number(row.normalizedPayload?.amount) || 0
-                const direction = (row.normalizedPayload?.direction ?? '').toLowerCase()
-                if (direction === 'credit' || direction === 'in') totalCredits += Math.abs(amount)
-                else totalDebits += Math.abs(amount)
-                if ((row.normalizedPayload?.asset ?? '').toLowerCase() === 'crypto') {
-                    cryptoTotal += Math.abs(amount)
-                }
-            }
-            const closingBalance = totalCredits - totalDebits
+            // ── New ingestion: summary doc + transactions subcollection ──
+            const { statementId, transactionCount, statementData } =
+                await ingestStatementToFirestore(uid, fileToUpload, rowsToSave, {
+                    sourceType: source,
+                    platform: source,
+                    currency: rowsToSave[0]?.normalizedPayload?.currency ?? 'SGD',
+                })
 
-            const metadata = {
-                sourceType: source,
-                platform: source,
-                status: 'parsed',
-                skipStorageUpload: !hasRealFile,
-                parsedData: {
-                    closing_balance: closingBalance,
-                    total_credits: totalCredits,
-                    total_debits: totalDebits,
-                    statement_month: new Date().toISOString().slice(0, 7),
-                    currency: rowsToSave[0]?.normalizedPayload?.currency ?? 'USD',
-                },
-                transactionsCount: rowsToSave.length,
-                netWorthContribution: Math.max(closingBalance, 0),
-                liquidityContribution: source === 'bank' ? Math.max(closingBalance, 0) : 0,
-                assetClassBreakdown: {
-                    cash: source === 'bank' ? Math.max(closingBalance, 0) : 0,
-                    stocks: source === 'broker' ? Math.max(closingBalance, 0) : 0,
-                    crypto: cryptoTotal,
-                    bonds: 0,
-                    property: 0,
-                    tokenised: 0,
-                },
-            }
-
-            const result = await processStatementAndRefreshMetrics(
+            // ── Recompute wellness & net-worth history (existing pipeline) ──
+            const wellness = await recomputeWellness(uid)
+            const historyEntry = await upsertNetWorthHistory(
                 uid,
-                fileToUpload,
-                metadata,
+                new Date(),
+                wellness.key_metrics?.net_worth ?? 0,
             )
+
+            const result = { statement: { id: statementId, ...statementData }, wellness, historyEntry }
             setFirebaseSaveResult(result)
-            showToast('success', `Saved to Firebase — wellness score: ${result.wellness?.overall_score ?? '–'}, net worth: ${result.wellness?.key_metrics?.net_worth ?? '–'}`)
+            showToast(
+                'success',
+                `Saved ${transactionCount} transactions — wellness: ${wellness.overall_score ?? '–'}, net worth: ${wellness.key_metrics?.net_worth ?? '–'}`,
+            )
             onSaveSuccess?.()
             return result
         } catch (err) {
