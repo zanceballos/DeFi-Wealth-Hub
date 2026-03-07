@@ -85,17 +85,6 @@ function WalletTab({ walletAllocation, walletRows }) {
           </table>
         </div>
       </article>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <article className={`${CARD_CLASS} flex items-start gap-3 border-l-4 border-red-500 bg-red-50/70 p-4 text-red-800`}>
-          <AlertTriangle className="mt-0.5 h-4 w-4" />
-          <p className="text-sm font-medium">🔴 Digital Asset Exposure: 33% of net worth</p>
-        </article>
-        <article className={`${CARD_CLASS} flex items-start gap-3 border-l-4 border-amber-400 bg-amber-50/70 p-4 text-amber-800`}>
-          <Landmark className="mt-0.5 h-4 w-4" />
-          <p className="text-sm font-medium">⚠️ Unregulated Assets: 27% (BTC + ETH)</p>
-        </article>
-      </div>
     </div>
   )
 }
