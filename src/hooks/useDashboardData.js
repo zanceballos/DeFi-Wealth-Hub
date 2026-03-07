@@ -29,6 +29,7 @@ import {
   getDocs,
   orderBy,
   query,
+  limit,
 } from 'firebase/firestore'
 import { useAuthContext } from './useAuthContext.js'
 import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
@@ -187,13 +188,26 @@ export default function useDashboardData() {
       const wellnessSnap = await getDoc(doc(db, 'users', uid, 'wellness', 'current'))
       const wellness = wellnessSnap.exists() ? wellnessSnap.data() : null
 
-      // 3. Statements
+      // 3. Statements + their transaction subcollections
       const statementsSnap = await getDocs(collection(db, 'users', uid, 'statements'))
       const statements = []
       statementsSnap.forEach((d) => statements.push({ id: d.id, ...d.data() }))
       const activeStmts = statements.filter(
         (s) => s.status === 'parsed' || s.status === 'approved',
       )
+
+      // Fetch transactions subcollection for each active statement (needed for Budget)
+      for (const stmt of activeStmts) {
+        try {
+          const txCol = collection(db, 'users', uid, 'statements', stmt.id, 'transactions')
+          const txSnap = await getDocs(query(txCol, orderBy('date', 'desc'), limit(200)))
+          const txns = []
+          txSnap.forEach((td) => txns.push({ id: td.id, ...td.data() }))
+          stmt.transactions = txns
+        } catch {
+          stmt.transactions = []
+        }
+      }
 
       // 4. Net worth history
       const historyRef = collection(db, 'users', uid, 'history', 'net_worth', 'items')

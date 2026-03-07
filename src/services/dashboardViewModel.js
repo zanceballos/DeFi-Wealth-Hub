@@ -248,18 +248,38 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
     : 0
 
   // ── Category spending ─────────────────────────────────────────────────
-  // Attempt to build from statement-level transaction categories if available
+  // Priority: read from transactions subcollection (new schema), then fall
+  // back to statement-level category_breakdown, then single bucket.
   const categoryMap = {}
   let hasCategoryData = false
 
+  // 1️⃣  Transaction-level categories (new subcollection schema)
   for (const stmt of active) {
-    // Check if statement has transaction-level category breakdowns
-    const txCategories = stmt.category_breakdown ?? stmt.parsed_data?.category_breakdown
-    if (txCategories && typeof txCategories === 'object') {
-      hasCategoryData = true
-      for (const [cat, amount] of Object.entries(txCategories)) {
-        const key = cat.toLowerCase()
-        categoryMap[key] = (categoryMap[key] ?? 0) + safeNumber(amount)
+    const txRows = stmt.transactions ?? []
+    if (!Array.isArray(txRows) || txRows.length === 0) continue
+
+    for (const tx of txRows) {
+      const dir = (tx.direction ?? '').toLowerCase()
+      if (dir === 'credit' || dir === 'in') continue // skip income for spending breakdown
+      const cat = (tx.category ?? 'uncategorised').toLowerCase()
+      const amt = Math.abs(safeNumber(tx.amount))
+      if (amt > 0) {
+        hasCategoryData = true
+        categoryMap[cat] = (categoryMap[cat] ?? 0) + amt
+      }
+    }
+  }
+
+  // 2️⃣  Fallback: statement-level category_breakdown (legacy / summary)
+  if (!hasCategoryData) {
+    for (const stmt of active) {
+      const txCategories = stmt.category_breakdown ?? stmt.parsed_data?.category_breakdown
+      if (txCategories && typeof txCategories === 'object') {
+        hasCategoryData = true
+        for (const [cat, amount] of Object.entries(txCategories)) {
+          const key = cat.toLowerCase()
+          categoryMap[key] = (categoryMap[key] ?? 0) + safeNumber(amount)
+        }
       }
     }
   }
@@ -272,13 +292,13 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
       .map(([category, amount]) => ({
         category: category.charAt(0).toUpperCase() + category.slice(1),
         amount,
-        pct: safePercent(amount, totalCatSpending),
+        percentage: safePercent(amount, totalCatSpending),
         color: getCategoryColor(category),
       }))
   } else {
-    // Fallback: single uncategorised bucket
+    // 3️⃣  Last resort: single uncategorised bucket
     categorySpending = spentThisMonth > 0
-      ? [{ category: 'Uncategorised', amount: spentThisMonth, pct: 100, color: getCategoryColor('uncategorised') }]
+      ? [{ category: 'Uncategorised', amount: spentThisMonth, percentage: 100, color: getCategoryColor('uncategorised') }]
       : []
   }
 
@@ -295,27 +315,32 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
   }
 
   const transactionSummary = {
-    totalTransactions,
-    totalInflow,
-    totalOutflow,
+    totalCount:  String(totalTransactions),
+    totalInflow:  formatCurrencySGD2(totalInflow),
+    totalOutflow: formatCurrencySGD2(totalOutflow),
   }
 
   // ── Recent transactions ───────────────────────────────────────────────
-  // Collect from statements that have embedded transaction rows
+  // Read from transactions subcollection first, fall back to embedded arrays
   const recentTransactions = []
   for (const stmt of active) {
     const txRows = stmt.transactions ?? stmt.parsed_data?.transactions ?? []
     if (!Array.isArray(txRows)) continue
 
     for (const tx of txRows) {
+      const amt = safeNumber(tx.amount)
+      const dir = (tx.direction ?? 'debit').toLowerCase()
+      const signedAmt = (dir === 'credit' || dir === 'in') ? Math.abs(amt) : -Math.abs(amt)
+
       recentTransactions.push({
-        source: tx.description ?? tx.source ?? 'Unknown',
-        merchant: stmt.platform ?? tx.merchant ?? '—',
-        date: tx.date ?? '—',
-        time: tx.time ?? '—',
-        category: tx.category ?? 'Unknown',
-        posted: tx.posted ?? formatRelativeDate(tx.date),
-        amount: formatCurrencySGD2(tx.amount ?? 0),
+        id:       tx.id ?? tx.row_id ?? undefined,
+        source:   tx.description ?? tx.source ?? 'Unknown',
+        merchant: tx.merchant ?? stmt.platform ?? '—',
+        date:     tx.date ?? '—',
+        time:     tx.time ?? '—',
+        category: tx.category ?? 'uncategorised',
+        posted:   tx.posted ?? formatRelativeDate(tx.date),
+        amount:   signedAmt,
       })
     }
   }
@@ -327,6 +352,7 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
   // ── Empty state ───────────────────────────────────────────────────────
   const hasBudgetData = monthlyBudget > 0 || spentThisMonth > 0
   const hasTransactions = totalTransactions > 0 || recentTransactions.length > 0
+  const hasAnyData = hasBudgetData || hasTransactions
 
   let message = ''
   if (!hasBudgetData && !hasTransactions) {
@@ -337,7 +363,7 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
     message = 'No transactions found yet. Upload a statement with transaction data.'
   }
 
-  const emptyState = { hasBudgetData, hasTransactions, message }
+  const emptyState = { hasBudgetData, hasTransactions, hasAnyData, message }
 
   return {
     monthlyBudget,
