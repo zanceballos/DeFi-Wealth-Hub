@@ -1,8 +1,21 @@
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
+import {createPortal} from "react-dom";
+import {processStatementAndRefreshMetrics} from '../../../services/financialDataService.js'
+import {useAuthContext} from '../../../hooks/useAuthContext.js'
 
 const API_BASE_URL = import.meta.env.VITE_PIPELINE_API_BASE_URL ?? 'https://defi-api.stocksuite.app'
 const REVIEWABLE_KEYS = ['date', 'description', 'amount', 'currency', 'category', 'direction', 'asset']
-const FIXED_USER_ID = 'u1'
+
+/* ── Mock rows used when backend is unreachable ── */
+const MOCK_PARSED_ROWS = [
+    { row_id: 'mock-1', normalized_payload: { date: '2026-03-01', description: 'Salary deposit', amount: 4490, currency: 'SGD', category: 'income', direction: 'credit', asset: 'cash' }, row_confidence: 0.97, validation_flags: [], state: 'pending' },
+    { row_id: 'mock-2', normalized_payload: { date: '2026-03-02', description: 'Rent payment', amount: 1800, currency: 'SGD', category: 'housing', direction: 'debit', asset: 'cash' }, row_confidence: 0.95, validation_flags: [], state: 'pending' },
+    { row_id: 'mock-3', normalized_payload: { date: '2026-03-03', description: 'Grab Food', amount: 42.50, currency: 'SGD', category: 'food', direction: 'debit', asset: 'cash' }, row_confidence: 0.92, validation_flags: [], state: 'pending' },
+    { row_id: 'mock-4', normalized_payload: { date: '2026-03-05', description: 'DBS SaveUp interest', amount: 18.75, currency: 'SGD', category: 'interest', direction: 'credit', asset: 'cash' }, row_confidence: 0.98, validation_flags: [], state: 'pending' },
+    { row_id: 'mock-5', normalized_payload: { date: '2026-03-06', description: 'NTUC FairPrice groceries', amount: 87.30, currency: 'SGD', category: 'groceries', direction: 'debit', asset: 'cash' }, row_confidence: 0.94, validation_flags: [], state: 'pending' },
+    { row_id: 'mock-6', normalized_payload: { date: '2026-03-07', description: 'ETH purchase on Binance', amount: 500, currency: 'SGD', category: 'investment', direction: 'debit', asset: 'crypto' }, row_confidence: 0.91, validation_flags: ['crypto_transfer'], state: 'pending' },
+    { row_id: 'mock-7', normalized_payload: { date: '2026-03-08', description: 'Singtel mobile bill', amount: 55, currency: 'SGD', category: 'utilities', direction: 'debit', asset: 'cash' }, row_confidence: 0.96, validation_flags: [], state: 'pending' },
+]
 
 function toRows(rawRows) {
     if (!Array.isArray(rawRows)) return []
@@ -106,8 +119,25 @@ function parseRowsFromModelText(modelText) {
     return recoverRowsFromRowsArrayText(stripped)
 }
 
-export default function Overlay() {
-    const [isOverlayOpen, setIsOverlayOpen] = useState(false)
+export default function Overlay({ onSaveSuccess, externalOpen, onExternalClose }) {
+    const { user } = useAuthContext()
+    const uid = user?.uid ?? ''
+
+    const [internalOpen, setInternalOpen] = useState(false)
+    const isOverlayOpen = externalOpen || internalOpen
+    const setIsOverlayOpen = (val) => {
+        setInternalOpen(val)
+        if (!val) onExternalClose?.()
+    }
+
+    // Lock body scroll when overlay is open
+    useEffect(() => {
+        if (!isOverlayOpen) return
+        const prev = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+        return () => { document.body.style.overflow = prev }
+    }, [isOverlayOpen])
+
     const [selectedFile, setSelectedFile] = useState(null)
     const [source, setSource] = useState('bank')
     const [jobId, setJobId] = useState('')
@@ -117,6 +147,18 @@ export default function Overlay() {
     const [infoMessage, setInfoMessage] = useState('')
     const [editRowId, setEditRowId] = useState(null)
     const [editPayloadDraft, setEditPayloadDraft] = useState('')
+    const [isSavingToFirebase, setIsSavingToFirebase] = useState(false)
+    const [firebaseSaveResult, setFirebaseSaveResult] = useState(null)
+    const [toast, setToast] = useState(null) // { type: 'success'|'error', message: string }
+
+    // Auto-dismiss toast after 5 seconds
+    useEffect(() => {
+        if (!toast) return
+        const timer = setTimeout(() => setToast(null), 5000)
+        return () => clearTimeout(timer)
+    }, [toast])
+
+    const showToast = (type, message) => setToast({ type, message })
 
     const tableColumns = useMemo(() => {
         const seen = new Set(REVIEWABLE_KEYS)
@@ -179,7 +221,7 @@ export default function Overlay() {
         const formData = new FormData()
         formData.append('file', selectedFile)
         formData.append('source', source)
-        formData.append('user_id', FIXED_USER_ID)
+        formData.append('user_id', uid)
 
         try {
             const response = await fetch(`${API_BASE_URL}/v1/documents/upload-and-parse`, {
@@ -200,12 +242,22 @@ export default function Overlay() {
             if (parsedRows.length === 0 && returnedJobId) {
                 await recoverRowsFromArtifacts(returnedJobId)
             }
+
+            // Save to Firebase after successful parse
+            try {
+                const result = await saveToFirebase(parsedRows)
+                setFirebaseSaveResult(result)
+                setInfoMessage((prev) => (prev ? prev + ' | ' : '') + 'Saved to Firebase successfully.')
+            } catch (firebaseError) {
+                console.error('Firebase save failed:', firebaseError)
+                setErrorMessage((prev) => (prev ? prev + ' | ' : '') + 'Parsed OK but Firebase save failed: ' + firebaseError.message)
+            }
         } catch (error) {
-            setErrorMessage(
-                error instanceof TypeError
-                    ? `Unable to reach backend at ${API_BASE_URL}. Check backend is running and CORS allows the Vite origin.`
-                    : error.message || 'Unable to parse the uploaded file.',
-            )
+            const msg = error instanceof TypeError
+                ? `Unable to reach backend at ${API_BASE_URL}. Check backend is running and CORS allows the Vite origin.`
+                : error.message || 'Unable to parse the uploaded file.'
+            setErrorMessage(msg)
+            showToast('error', msg)
         } finally {
             setIsProcessing(false)
         }
@@ -266,6 +318,80 @@ export default function Overlay() {
         setRowStateLocally(rowId, 'pending')
     }
 
+    const saveToFirebase = async (currentRows) => {
+        const rowsToSave = currentRows ?? rows
+        if (rowsToSave.length === 0) {
+            setErrorMessage('Nothing to save – upload/parse a file or load mock data first.')
+            return null
+        }
+        setIsSavingToFirebase(true)
+        setErrorMessage('')
+        try {
+            // If no real file was selected, create a synthetic placeholder and skip Storage upload
+            const hasRealFile = !!selectedFile
+            const fileToUpload = selectedFile ?? new File(
+                [new Blob([JSON.stringify({ rows: rowsToSave.map(r => r.normalizedPayload) }, null, 2)], { type: 'application/json' })],
+                'statement-export.json',
+                { type: 'application/json' },
+            )
+
+            // Aggregate parsed data from rows
+            let totalCredits = 0
+            let totalDebits = 0
+            let cryptoTotal = 0
+            for (const row of rowsToSave) {
+                const amount = Number(row.normalizedPayload?.amount) || 0
+                const direction = (row.normalizedPayload?.direction ?? '').toLowerCase()
+                if (direction === 'credit' || direction === 'in') totalCredits += Math.abs(amount)
+                else totalDebits += Math.abs(amount)
+                if ((row.normalizedPayload?.asset ?? '').toLowerCase() === 'crypto') {
+                    cryptoTotal += Math.abs(amount)
+                }
+            }
+            const closingBalance = totalCredits - totalDebits
+
+            const metadata = {
+                sourceType: source,
+                platform: source,
+                status: 'parsed',
+                skipStorageUpload: !hasRealFile,
+                parsedData: {
+                    closing_balance: closingBalance,
+                    total_credits: totalCredits,
+                    total_debits: totalDebits,
+                    statement_month: new Date().toISOString().slice(0, 7),
+                    currency: rowsToSave[0]?.normalizedPayload?.currency ?? 'USD',
+                },
+                transactionsCount: rowsToSave.length,
+                netWorthContribution: Math.max(closingBalance, 0),
+                liquidityContribution: source === 'bank' ? Math.max(closingBalance, 0) : 0,
+                assetClassBreakdown: {
+                    cash: source === 'bank' ? Math.max(closingBalance, 0) : 0,
+                    stocks: source === 'broker' ? Math.max(closingBalance, 0) : 0,
+                    crypto: cryptoTotal,
+                    bonds: 0,
+                    property: 0,
+                    tokenised: 0,
+                },
+            }
+
+            const result = await processStatementAndRefreshMetrics(
+                uid,
+                fileToUpload,
+                metadata,
+            )
+            setFirebaseSaveResult(result)
+            showToast('success', `Saved to Firebase — wellness score: ${result.wellness?.overall_score ?? '–'}, net worth: ${result.wellness?.key_metrics?.net_worth ?? '–'}`)
+            onSaveSuccess?.()
+            return result
+        } catch (err) {
+            showToast('error', 'Firebase save failed: ' + (err.message || 'Unknown error'))
+            throw err
+        } finally {
+            setIsSavingToFirebase(false)
+        }
+    }
+
     const beginEditRow = (row) => {
         setEditRowId(row.id)
         setEditPayloadDraft(JSON.stringify(row.normalizedPayload ?? {}, null, 2))
@@ -298,25 +424,68 @@ export default function Overlay() {
         }
     }
 
+    /** Load mock rows into the table — no Firebase, no backend */
+    const handleLoadMockData = () => {
+        setErrorMessage('')
+        setInfoMessage('')
+        setFirebaseSaveResult(null)
+        const mockRows = toRows(MOCK_PARSED_ROWS)
+        setRows(mockRows)
+        setJobId('mock-job-' + Date.now())
+        setInfoMessage(`Loaded ${mockRows.length} mock rows. Review them, then click "Save to Firebase" when ready.`)
+        showToast('success', `${mockRows.length} mock rows loaded into table.`)
+    }
+
     return (
         <>
+            {/* ── Floating action button ── */}
             <button
                 type="button"
-                aria-label="Open overlay"
+                aria-label="Upload & review statements"
                 onClick={() => setIsOverlayOpen(true)}
-                className="fixed right-5 bottom-5 z-40 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/60 focus-visible:ring-offset-2"
+                className="fixed right-5 bottom-5 z-50 flex items-center gap-2.5 rounded-2xl bg-brand-primary px-5 py-3.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,129,195,0.35)] transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_6px_28px_rgba(32,129,195,0.45)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/60 focus-visible:ring-offset-2"
             >
-                Overlay
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="12" y1="18" x2="12" y2="12"/>
+                    <line x1="9" y1="15" x2="15" y2="15"/>
+                </svg>
+                Upload Statement
             </button>
 
-            {isOverlayOpen && (
+            {isOverlayOpen && createPortal(
                 <div
-                    className="fixed inset-0 z-50 bg-slate-900/45 p-4 backdrop-blur-sm"
+                    className="fixed inset-0 z-100 bg-slate-900/45 p-4 backdrop-blur-sm"
                     role="dialog"
                     aria-modal="true"
                     aria-label="Financial document review overlay"
                 >
                     <div className="mx-auto h-[92vh] w-full max-w-7xl overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl">
+                        {/* ── Toast notification ── */}
+                        {toast && (
+                            <div
+                                className={[
+                                    'flex items-center justify-between gap-3 px-5 py-3 text-sm font-medium transition-all duration-300',
+                                    toast.type === 'success'
+                                        ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200'
+                                        : 'bg-red-50 text-red-800 border-b border-red-200',
+                                ].join(' ')}
+                                role="alert"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-base">{toast.type === 'success' ? '✓' : '✗'}</span>
+                                    <span>{toast.message}</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setToast(null)}
+                                    className="shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold opacity-60 hover:opacity-100 transition-opacity"
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                        )}
                         <div className="mb-4 flex items-center justify-between">
                             <div className="border-b border-slate-200 p-5">
                                 <h2 className="text-lg font-semibold text-slate-900">Document Ingestion & Review</h2>
@@ -355,7 +524,7 @@ export default function Overlay() {
                                     </div>
                                     <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                                         User context: <span
-                                        className="font-semibold text-slate-800">{FIXED_USER_ID}</span>
+                                        className="font-semibold text-slate-800">{uid || 'not signed in'}</span>
                                     </p>
                                     <div>
                                         <label className="mb-1 block text-xs font-medium text-slate-600">File</label>
@@ -373,6 +542,17 @@ export default function Overlay() {
                                     >
                                         {isProcessing ? 'Processing...' : 'Upload & Parse'}
                                     </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleLoadMockData}
+                                        disabled={isProcessing}
+                                        className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        ⚡ Load Mock Data
+                                    </button>
+                                    <p className="text-[11px] text-slate-400">
+                                        Loads sample transactions into the table. Review them, then click Save to Firebase.
+                                    </p>
                                     <div className="border-t border-slate-200 pt-3">
                                         <label className="mb-1 block text-xs font-medium text-slate-600">Job ID</label>
                                         <div className="flex gap-2">
@@ -400,6 +580,23 @@ export default function Overlay() {
                                         <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
                                             {infoMessage}
                                         </p>
+                                    )}
+                                    {rows.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => saveToFirebase()}
+                                            disabled={isSavingToFirebase}
+                                            className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {isSavingToFirebase ? 'Saving to Firebase...' : 'Save to Firebase'}
+                                        </button>
+                                    )}
+                                    {firebaseSaveResult && (
+                                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                                            <p className="font-semibold">Saved ✓</p>
+                                            <p>Wellness: {firebaseSaveResult.wellness?.overall_score ?? '–'} ({firebaseSaveResult.wellness?.status ?? '–'})</p>
+                                            <p>Net worth: {firebaseSaveResult.wellness?.key_metrics?.net_worth ?? '–'}</p>
+                                        </div>
                                     )}
                                 </div>
                             </aside>
@@ -534,7 +731,8 @@ export default function Overlay() {
                             </div>
                         )}
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </>
     )

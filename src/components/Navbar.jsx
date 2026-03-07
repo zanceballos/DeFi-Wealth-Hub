@@ -7,6 +7,7 @@ function Navbar() {
     const navigate = useNavigate()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+    const [isScrolled, setIsScrolled] = useState(false)
     const menuRef = useRef(null)
 
     // Derive initials from profile name or user email
@@ -32,6 +33,15 @@ function Navbar() {
     function closeMobileNav() {
         setIsMobileNavOpen(false)
     }
+
+    useEffect(() => {
+        function handleScroll() {
+            setIsScrolled(window.scrollY > 16)
+        }
+        window.addEventListener('scroll', handleScroll, { passive: true })
+        handleScroll()
+        return () => window.removeEventListener('scroll', handleScroll)
+    }, [])
 
     useEffect(() => {
         function handleClickOutside(event) {
@@ -70,8 +80,15 @@ function Navbar() {
     }, [isMobileNavOpen])
 
     return (
-        <header className="relative mb-8 sm:mb-10">
-            <div className="flex items-center justify-between gap-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+        <header
+            className={[
+                'sticky top-0 z-50 mb-8 px-4 py-3 transition-all duration-300 sm:mb-10',
+                isScrolled
+                    ? 'border border-white/70 bg-white/80 shadow-[0_2px_12px_rgba(15,23,42,0.06)] backdrop-blur-xl rounded-none sm:rounded-none'
+                    : 'border border-transparent bg-transparent shadow-none',
+            ].join(' ')}
+        >
+            <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         <span className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 sm:justify-self-start sm:text-sm">
           DeFi Wealth Hub
         </span>

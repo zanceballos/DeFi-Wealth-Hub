@@ -5,10 +5,10 @@ import Navbar from "./components/Navbar.jsx";
 
 function App() {
     return (
-        <main className="min-h-screen px-24 bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 text-slate-900">
-            <div className="mx-auto flex min-h-screen w-full max-w-none flex-col px-3 py-4 sm:px-6 sm:py-6">
-                {/*<NavbarOld/>*/}
-                <Navbar />
+        <main className="min-h-screen bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 text-slate-900">
+            {/*<NavbarOld/>*/}
+            <Navbar />
+            <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-none flex-col px-3 sm:px-6 lg:px-24">
                 <div className="mt-4">
                     <Outlet />
                 </div>
