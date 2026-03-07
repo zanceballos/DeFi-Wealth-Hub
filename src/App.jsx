@@ -28,17 +28,7 @@ export function HomePage() {
     )
 }
 
-export function AdvisoryPage() {
-    return (
-        <section className="flex flex-1 flex-col items-center justify-center px-2 text-center sm:px-0">
-            <h1 className="text-3xl font-bold tracking-tight sm:text-5xl">Wealth Advisory</h1>
-            <p className="mt-4 max-w-xl text-sm text-slate-600 sm:text-base">
-                Explore market insights, risk guidance, and coaching-style recommendations in a banking-style advisory
-                view.
-            </p>
-        </section>
-    )
-}
+// AdvisoryPage moved to src/pages/AdvisoryPage.jsx
 
 export function PrivacyPage() {
     return (
