@@ -1,0 +1,17 @@
+BACKEND SIMPLE UI TESTKIT
+https://defi_api.stocksuite.app/docs
+
+
+HOW TO USE 
+/v1/documents/upload-and-parse
+Upload And Parse Document
+Click on "Try it out"
+Upload document
+
+copy job id in the response json
+job_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6 is just a sample
+
+Go down to /v1/jobs/{job_id}/artifacts
+Get Job Artifacts 
+Click "Try it out"paste the job id in the check the parsed json result
+
