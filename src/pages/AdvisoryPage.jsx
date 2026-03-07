@@ -350,9 +350,12 @@ function DataUsedSection({ payload }) {
 // Session-storage keys for caching the Groq response within the browser tab
 const SS_ADVISORY = 'dwh_advisory'
 const SS_PAYLOAD  = 'dwh_advisory_payload'
+const SS_UID      = 'dwh_advisory_uid'
 
-function readSessionCache() {
+function readSessionCache(uid) {
   try {
+    // Only return cache if it belongs to the current user
+    if (sessionStorage.getItem(SS_UID) !== uid) return null
     const a = sessionStorage.getItem(SS_ADVISORY)
     const p = sessionStorage.getItem(SS_PAYLOAD)
     if (a && p) return { advisory: JSON.parse(a), payload: JSON.parse(p) }
@@ -360,8 +363,9 @@ function readSessionCache() {
   return null
 }
 
-function writeSessionCache(advisory, payload) {
+function writeSessionCache(uid, advisory, payload) {
   try {
+    sessionStorage.setItem(SS_UID, uid)
     sessionStorage.setItem(SS_ADVISORY, JSON.stringify(advisory))
     sessionStorage.setItem(SS_PAYLOAD, JSON.stringify(payload))
   } catch { /* quota exceeded — ignore */ }
@@ -370,6 +374,7 @@ function writeSessionCache(advisory, payload) {
 function clearSessionCache() {
   sessionStorage.removeItem(SS_ADVISORY)
   sessionStorage.removeItem(SS_PAYLOAD)
+  sessionStorage.removeItem(SS_UID)
 }
 
 export default function AdvisoryPage() {
@@ -409,7 +414,7 @@ export default function AdvisoryPage() {
 
     // Check session cache unless forced
     if (!force) {
-      const cached = readSessionCache()
+      const cached = readSessionCache(user.uid)
       if (cached) {
         setAdvisory(cached.advisory)
         setPayload(cached.payload)
@@ -429,8 +434,8 @@ export default function AdvisoryPage() {
       const result = await fetchAdvisory(builtPayload)
       setAdvisory(result)
 
-      // Cache for the rest of this browser session
-      writeSessionCache(result, builtPayload)
+      // Cache for the rest of this browser session (scoped to this user)
+      writeSessionCache(user.uid, result, builtPayload)
     } catch (err) {
       console.error('[AdvisoryPage] Error:', err)
       setError(err.message ?? 'Something went wrong')

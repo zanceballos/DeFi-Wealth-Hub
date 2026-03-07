@@ -58,6 +58,10 @@ export function useAuth() {
   }
 
   async function logout() {
+    // Clear advisory session cache so next user doesn't see stale data
+    sessionStorage.removeItem('dwh_advisory')
+    sessionStorage.removeItem('dwh_advisory_payload')
+    sessionStorage.removeItem('dwh_advisory_uid')
     await signOut(auth)
   }
 
