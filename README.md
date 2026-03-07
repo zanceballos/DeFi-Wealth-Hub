@@ -211,7 +211,7 @@ advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ Advisory
 
 ---
 
-## � Data Structure & Calculation Reference
+## Data Structure & Calculation Reference
 
 This section documents the Firestore data model, how each metric is derived, and the scoring formulas that power the dashboard.
 
@@ -479,7 +479,7 @@ overallScore = round((100 + 86 + 83 + 87) / 4) = 89  →  🟢 Excellent Health
 
 ---
 
-## �🛠️ Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology | Why |
 | :--- | :--- | :--- |
