@@ -426,12 +426,12 @@ export default function Overlay({ onSaveSuccess, externalOpen, onExternalClose }
 
             {isOverlayOpen && createPortal(
                 <div
-                    className="fixed inset-0 z-100 bg-slate-900/45 p-4 backdrop-blur-sm"
+                    className="fixed inset-0 z-100 overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-sm"
                     role="dialog"
                     aria-modal="true"
                     aria-label="Financial document review overlay"
                 >
-                    <div className="mx-auto h-[92vh] w-full max-w-7xl overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl">
+                    <div className="mx-auto min-h-[92vh] w-full max-w-7xl overflow-y-auto rounded-2xl border border-white/70 bg-white shadow-2xl">
                         {/* ── Toast notification ── */}
                         {toast && (
                             <div
