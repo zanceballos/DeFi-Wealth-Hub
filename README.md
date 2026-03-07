@@ -211,7 +211,275 @@ advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ Advisory
 
 ---
 
-## 🛠️ Tech Stack
+## � Data Structure & Calculation Reference
+
+This section documents the Firestore data model, how each metric is derived, and the scoring formulas that power the dashboard.
+
+### Firestore Document Schema
+
+```
+/users/{uid}
+│
+├── name                    (string)   "John Doe"
+├── monthly_income          (number)   4490
+├── monthly_expenses        (number)   3458
+├── riskProfile             (string)   "moderate"
+├── location                (string)   "Singapore"
+│
+├── /statements/{statementId}
+│   ├── file_name                (string)   "DBS_Mar2026.pdf"
+│   ├── source_type              (string)   "bank" | "crypto" | "broker" | "investment" | "expenses" | "other"
+│   ├── platform                 (string)   "DBS"
+│   ├── status                   (string)   "uploaded" | "parsed" | "approved"
+│   ├── net_worth_contribution   (number)   12500
+│   ├── liquidity_contribution   (number)   12500
+│   ├── transactions_count       (number)   15
+│   ├── parsed_data
+│   │   ├── closing_balance      (number)   12500
+│   │   ├── total_credits        (number)   3400
+│   │   ├── total_debits         (number)   2100
+│   │   ├── statement_month      (string)   "2026-03"
+│   │   └── currency             (string)   "SGD"
+│   ├── asset_class_breakdown
+│   │   ├── cash                 (number)   12500
+│   │   ├── stocks               (number)   0
+│   │   ├── crypto               (number)   0
+│   │   ├── bonds                (number)   0
+│   │   ├── property             (number)   0
+│   │   └── tokenised            (number)   0
+│   │
+│   └── /transactions/{txId}
+│       ├── date          (string)   "2026-03-01"
+│       ├── description   (string)   "GRAB TRANSPORT"
+│       ├── amount        (number)   12.50
+│       ├── direction     (string)   "debit" | "credit"
+│       ├── category      (string)   "transport"
+│       ├── merchant      (string)   "Grab"
+│       ├── currency      (string)   "SGD"
+│       └── asset         (string)   "cash"
+│
+├── /wellness/current
+│   ├── overall_score    (number)   72
+│   ├── status           (string)   "green" | "amber" | "red"
+│   ├── computed_at      (timestamp)
+│   ├── pillars
+│   │   ├── liquidity          { score: 83, status: "green" }
+│   │   ├── diversification    { score: 65, status: "amber" }
+│   │   ├── risk_match         { score: 78, status: "green" }
+│   │   └── digital_health     { score: 62, status: "amber" }
+│   └── key_metrics
+│       ├── net_worth              (number)   86700
+│       ├── cash_buffer_months     (number)   3.61
+│       ├── crypto_pct             (number)   14.76
+│       ├── digital_pct            (number)   19.49
+│       ├── unregulated_pct        (number)   14.76
+│       ├── savings_rate_pct       (number)   22.98
+│       └── largest_position_pct   (number)   45.20
+│
+└── /history/net_worth/items/{monthKey}    e.g. "2026-03"
+    ├── month        (string)   "Mar 2026"
+    ├── month_key    (string)   "2026-03"
+    ├── value        (number)   86700
+    └── updated_at   (timestamp)
+```
+
+### Intermediate Aggregation Values
+
+Before pillar scores are computed, the system aggregates these values from all **active** (parsed/approved) statements:
+
+| Variable | How It's Computed | Example |
+| :--- | :--- | :--- |
+| `totalNetWorth` | `Σ stmt.net_worth_contribution` for all active statements | S$86,700 |
+| `totalCash` | `Σ stmt.asset_class_breakdown.cash` | S$32,100 |
+| `totalCrypto` | `Σ stmt.asset_class_breakdown.crypto` | S$12,800 |
+| `totalTokenised` | `Σ stmt.asset_class_breakdown.tokenised` | S$4,200 |
+| `totalUnregulated` | `Σ stmt.net_worth_contribution` where `source_type ∈ {crypto, other}` | S$12,800 |
+| `largestContribution` | `max(stmt.net_worth_contribution)` across all active statements | S$39,200 |
+
+### Derived Percentage Metrics
+
+| Metric | Formula | Example |
+| :--- | :--- | :--- |
+| `cashBufferMonths` | `totalCash / monthlyExpenses` | 32100 / 3458 = **9.28 months** |
+| `cryptoPct` | `(totalCrypto / totalNetWorth) × 100` | (12800 / 86700) × 100 = **14.76%** |
+| `digitalPct` | `((totalCrypto + totalTokenised) / totalNetWorth) × 100` | ((12800 + 4200) / 86700) × 100 = **19.61%** |
+| `unregulatedPct` | `(totalUnregulated / totalNetWorth) × 100` | (12800 / 86700) × 100 = **14.76%** |
+| `largestPositionPct` | `(largestContribution / totalNetWorth) × 100` | (39200 / 86700) × 100 = **45.21%** |
+| `savingsRatePct` | `((monthlyIncome − monthlyExpenses) / monthlyIncome) × 100` | ((4490 − 3458) / 4490) × 100 = **22.98%** |
+
+### Financial Health Pillar Scoring (0–100)
+
+Each pillar produces a score from 0 to 100, clamped via `clampScore(x) = round(min(100, max(0, x)))`.
+
+#### 1. Liquidity Score
+
+> **Goal:** Ensure the user has 3–6 months of cash reserves relative to monthly expenses.
+
+```
+if cashBufferMonths ≥ 6:
+    liquidityScore = 100
+else:
+    liquidityScore = (cashBufferMonths / 6) × 100
+```
+
+| Cash Buffer | Score | Status |
+| :--- | :--- | :--- |
+| 0 months | 0 | 🔴 Red |
+| 2 months | 33 | 🔴 Red |
+| 3 months | 50 | 🟡 Amber |
+| 4.5 months | 75 | 🟢 Green |
+| 6+ months | 100 | 🟢 Green |
+
+#### 2. Diversification Score
+
+> **Goal:** Penalise over-concentration in a single position and reward having multiple platforms.
+
+```
+diversificationScore = 100 − largestPositionPct + min(activeStatements × 10, 30)
+```
+
+| Largest Position | Active Statements | Score |
+| :--- | :--- | :--- |
+| 80% | 1 | 100 − 80 + 10 = **30** 🔴 |
+| 50% | 2 | 100 − 50 + 20 = **70** 🟢 |
+| 30% | 4 | 100 − 30 + 30 = **100** 🟢 |
+| 45% | 3 | 100 − 45 + 30 = **85** 🟢 |
+
+#### 3. Risk Match Score
+
+> **Goal:** Higher crypto and unregulated exposure lowers the score.
+
+```
+riskMatchScore = 100 − (cryptoPct × 0.5) − (unregulatedPct × 0.5)
+```
+
+| Crypto % | Unregulated % | Score |
+| :--- | :--- | :--- |
+| 0% | 0% | **100** 🟢 |
+| 15% | 15% | 100 − 7.5 − 7.5 = **85** 🟢 |
+| 40% | 40% | 100 − 20 − 20 = **60** 🟡 |
+| 80% | 80% | 100 − 40 − 40 = **20** 🔴 |
+
+#### 4. Digital Health Score
+
+> **Goal:** Digital asset exposure (crypto + tokenised) ideally between 5–30%.
+
+```
+if digitalPct ≤ 30:
+    digitalHealthScore = 70 + digitalPct
+else:
+    digitalHealthScore = 100 − (digitalPct − 30) × 2
+```
+
+| Digital % | Score | Reasoning |
+| :--- | :--- | :--- |
+| 0% | **70** 🟢 | No digital = safe but not leveraging Web3 |
+| 15% | **85** 🟢 | Sweet spot |
+| 30% | **100** 🟢 | Maximum ideal exposure |
+| 50% | **60** 🟡 | Over-exposed, penalised |
+| 80% | **0** 🔴 | Extreme concentration |
+
+### Overall Wellness Score
+
+```
+overallScore = round((liquidityScore + diversificationScore + riskMatchScore + digitalHealthScore) / 4)
+```
+
+| Overall Score | Status | UI Label |
+| :--- | :--- | :--- |
+| 80–100 | 🟢 Green | Excellent Health |
+| 70–79 | 🟢 Green | Good Health |
+| 50–69 | 🟡 Amber | Moderate Health |
+| 40–49 | 🟡 Amber | Needs Attention |
+| 0–39 | 🔴 Red | Critical |
+
+### Budget & Emergency Savings Calculations
+
+| Metric | Formula | Example |
+| :--- | :--- | :--- |
+| `monthlyBudget` | `profile.monthly_expenses` | S$3,458 |
+| `spentThisMonth` | `Σ stmt.parsed_data.total_debits` (current month statements) | S$2,100 |
+| `remainingBudget` | `max(monthlyBudget − spentThisMonth, 0)` | S$1,358 |
+| `emergencySavingsTarget` | `monthlyExpenses × 6` | 3458 × 6 = **S$20,748** |
+| `emergencySavingsCurrent` | `totalCash + totalBonds` (capped at 1.5× target) | S$32,100 |
+| `emergencySavingsPct` | `min(round((current / target) × 100), 100)` | min(round(32100/20748 × 100), 100) = **100%** |
+
+### Wallet Allocation Calculation
+
+For each asset class in `[cash, bonds, stocks, crypto, property, tokenised]`:
+
+```
+allocationPct = round((assetClassTotal / totalNetWorth) × 100)
+```
+
+Per-platform row:
+
+```
+portfolioPct = round((stmt.net_worth_contribution / totalNetWorth) × 100)
+```
+
+### Category Spending Breakdown
+
+For each transaction category (Food, Transport, etc.):
+
+```
+categoryPct = round((categoryAmount / totalCategorySpending) × 100)
+```
+
+Priority for category data:
+1. **Transaction-level** — reads `category` from each transaction in the subcollection
+2. **Statement-level fallback** — reads `category_breakdown` from statement `parsed_data`
+3. **Last resort** — single "Uncategorised" bucket using `spentThisMonth`
+
+### End-to-End Calculation Example
+
+> A user with **monthly income S$4,490** and **monthly expenses S$3,458** uploads 3 statements:
+
+| Statement | Source | Net Worth | Cash | Crypto | Tokenised |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| DBS Savings | bank | S$32,100 | S$32,100 | — | — |
+| Interactive Brokers | broker | S$28,400 | — | — | — |
+| Binance | crypto | S$12,800 | — | S$12,800 | — |
+
+**Step 1 — Aggregate:**
+
+| | Value |
+| :--- | :--- |
+| totalNetWorth | 32,100 + 28,400 + 12,800 = **S$73,300** |
+| totalCash | **S$32,100** |
+| totalCrypto | **S$12,800** |
+| totalUnregulated | **S$12,800** (Binance = crypto source) |
+| largestContribution | **S$32,100** (DBS) |
+
+**Step 2 — Percentages:**
+
+| | Calculation | Value |
+| :--- | :--- | :--- |
+| cashBufferMonths | 32,100 / 3,458 | **9.28** |
+| cryptoPct | 12,800 / 73,300 × 100 | **17.46%** |
+| digitalPct | 12,800 / 73,300 × 100 | **17.46%** |
+| unregulatedPct | 12,800 / 73,300 × 100 | **17.46%** |
+| largestPositionPct | 32,100 / 73,300 × 100 | **43.79%** |
+| savingsRatePct | (4,490 − 3,458) / 4,490 × 100 | **22.98%** |
+
+**Step 3 — Pillar Scores:**
+
+| Pillar | Formula | Result |
+| :--- | :--- | :--- |
+| Liquidity | cashBuffer ≥ 6 → 100 | **100** 🟢 |
+| Diversification | 100 − 43.79 + min(3×10, 30) | **86** 🟢 |
+| Risk Match | 100 − 17.46×0.5 − 17.46×0.5 | **83** 🟢 |
+| Digital Health | 17.46 ≤ 30 → 70 + 17.46 | **87** 🟢 |
+
+**Step 4 — Overall:**
+
+```
+overallScore = round((100 + 86 + 83 + 87) / 4) = 89  →  🟢 Excellent Health
+```
+
+---
+
+## �🛠️ Tech Stack
 
 | Layer | Technology | Why |
 | :--- | :--- | :--- |
