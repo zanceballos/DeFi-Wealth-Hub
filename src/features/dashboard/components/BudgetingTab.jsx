@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PiggyBank, Upload } from 'lucide-react'
 import StatCard from '../../../components/ui/StatCard.jsx'
 import CategoryBadge from '../../../components/ui/CategoryBadge.jsx'
+import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
 
 const CARD_CLASS = 'bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl p-5'
 
@@ -161,7 +162,10 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       <div className="grid grid-cols-3 gap-4">
         {/* Budget progress */}
         <div className={`${CARD_CLASS} col-span-2`}>
-          <p className="text-sm text-gray-500 font-medium">Budget for the month</p>
+          <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5">
+            Budget for the month
+            <InfoTooltip text="Your self-set monthly spending limit. The progress bar shows (Total outflows ÷ Budget) × 100. Remaining = Budget − Total outflows for the current month." />
+          </p>
           <p className="text-3xl font-bold text-gray-900 mt-2">${fmt(budget)}</p>
           <div className="mt-3 bg-gray-100 rounded-full h-2 overflow-hidden">
             <div
@@ -202,7 +206,10 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       {/* ── Emergency savings ─────────────────────── */}
       <div className="grid grid-cols-2 gap-4">
         <div className={`${CARD_CLASS} col-span-2`}>
-          <p className="text-sm text-gray-500 font-medium">6-months Emergency Savings</p>
+          <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5">
+            6-months Emergency Savings
+            <InfoTooltip text="Target = Average monthly expenses × 6. Progress = (Current liquid savings ÷ Target) × 100. We recommend keeping 6 months of expenses in easily accessible accounts for emergencies." />
+          </p>
           <p className="text-3xl font-bold text-gray-900 mt-2">${fmt(emergencySavingsTarget)}</p>
           <p className="text-sm text-gray-400 mt-1">
             Amount is based on your spending over the past 6-months
@@ -248,6 +255,7 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
           valueColor="text-teal-500"
           changeText={transactionSummary.totalCountChange ?? ''}
           changeColor="text-green-500"
+          tooltip="Count of all debit and credit entries from your uploaded statements within the selected time filter."
         />
         <StatCard
           title="Total Inflow"
@@ -255,6 +263,7 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
           valueColor="text-teal-500"
           changeText={transactionSummary.totalInflowChange ?? ''}
           changeColor="text-green-500"
+          tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds, and other deposits within the selected period."
         />
         <StatCard
           title="Total Outflow"
@@ -262,6 +271,7 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
           valueColor="text-teal-500"
           changeText={transactionSummary.totalOutflowChange ?? ''}
           changeColor="text-green-500"
+          tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out, and withdrawals within the selected period."
         />
       </div>
 
@@ -323,7 +333,10 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       {/* ── Category spending ─────────────────────── */}
       {derivedCategorySpending.length > 0 && (
         <div className={`${CARD_CLASS} col-span-1`}>
-          <p className="text-sm text-gray-500 font-medium mb-4">Spending by Category — This Month</p>
+          <p className="text-sm text-gray-500 font-medium mb-4 flex items-center gap-1.5">
+            Spending by Category — This Month
+            <InfoTooltip text="Each category total = sum of outflow transactions tagged with that category. Percentages show each category's share of total outflows." />
+          </p>
           <div className="space-y-3">
             {derivedCategorySpending.map((item) => (
               <div key={item.category} className="flex items-center gap-3">
