@@ -1,4 +1,5 @@
 import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield} from 'lucide-react'
+import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
 import {
     Line,
     LineChart,
@@ -7,9 +8,11 @@ import {
 } from 'recharts'
 import MetricCard, {BreakdownRow, PillarRow} from '../../../components/ui/MetricCard.jsx'
 
+
 const SPENT = 1927.90
 const CARD_CLASS =
-    'overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5'
+    'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5'
+
 
 function CurrencyTooltip({active, payload, label}) {
     if (!active || !payload?.length) {
@@ -25,6 +28,7 @@ function CurrencyTooltip({active, payload, label}) {
         </div>
     )
 }
+
 
 function WellnessRing({score}) {
     const radius = 44
@@ -49,7 +53,7 @@ function WellnessRing({score}) {
     )
 }
 
-/* ── Empty-state onboarding steps ── */
+
 const ONBOARDING_STEPS = [
     {
         icon: Upload,
@@ -77,10 +81,10 @@ const ONBOARDING_STEPS = [
     },
 ]
 
+
 function EmptyState({ userName, todayLabel, onUploadClick }) {
     return (
         <div className="space-y-8">
-            {/* Greeting */}
             <header className="px-1">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                     Welcome, {userName} 👋
@@ -88,9 +92,7 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
                 <p className="mt-1 text-sm text-slate-500">{todayLabel}</p>
             </header>
 
-            {/* Hero empty card */}
-            <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-linear-to-br from-white to-slate-50 p-8 text-center shadow-sm sm:p-12">
-                {/* Decorative rings */}
+            <div className="relative rounded-2xl border border-dashed border-slate-300 bg-linear-to-br from-white to-slate-50 p-8 text-center shadow-sm sm:p-12">
                 <div className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-brand-primary/5 blur-2xl" />
                 <div className="pointer-events-none absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-brand-accent/5 blur-2xl" />
 
@@ -116,7 +118,6 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
                 </div>
             </div>
 
-            {/* How-it-works steps */}
             <div>
                 <h3 className="mb-4 px-1 text-sm font-semibold uppercase tracking-wide text-slate-400">
                     How it works
@@ -127,7 +128,7 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
                         return (
                             <article
                                 key={step.title}
-                                className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
+                                className="group relative rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
                             >
                                 <span className="absolute top-3 right-4 text-xs font-bold text-slate-200">
                                     {i + 1}
@@ -145,7 +146,6 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
                 </div>
             </div>
 
-            {/* Placeholder cards to hint at what's coming */}
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                 {[
                     { title: 'Net worth', icon: Wallet, accent: 'bg-emerald-400' },
@@ -156,7 +156,7 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
                     return (
                         <div
                             key={card.title}
-                            className="relative overflow-hidden rounded-2xl border border-slate-200/60 bg-slate-50/60 p-5"
+                            className="relative rounded-2xl border border-slate-200/60 bg-slate-50/60 p-5"
                         >
                             <span className={`absolute inset-y-0 left-0 w-1 rounded-l-2xl ${card.accent} opacity-30`} />
                             <div className="flex items-center gap-3">
@@ -177,17 +177,18 @@ function EmptyState({ userName, todayLabel, onUploadClick }) {
     )
 }
 
+
 function OverviewTab({
-                         userProfile,
-                         heroStats,
-                         pillarScores,
-                         netWorthSeries,
-                         savingsDetail,
-                         netWorthBreakdown,
-                         todayLabel,
-                         isEmpty = false,
-                         onUploadClick,
-                     }) {
+    userProfile,
+    heroStats,
+    pillarScores,
+    netWorthSeries,
+    savingsDetail,
+    netWorthBreakdown,
+    todayLabel,
+    isEmpty = false,
+    onUploadClick,
+}) {
 
     if (isEmpty) {
         return (
@@ -199,7 +200,6 @@ function OverviewTab({
         )
     }
 
-    /* Derive wellness status colour */
     const wellnessStatusColor =
         heroStats.wellness.score >= 70
             ? 'bg-emerald-100 text-emerald-700'
@@ -219,12 +219,8 @@ function OverviewTab({
                 </p>
             </header>
 
-            {/* ═══════════════════════════════════════════════════
-                Hero metric cards — digibank style with hover panels
-                ═══════════════════════════════════════════════════ */}
+            {/* ── Hero metric cards ── */}
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-
-                {/* ── 1. Net Worth ── */}
                 <MetricCard
                     title="Net worth"
                     value={heroStats.netWorth.value}
@@ -240,11 +236,11 @@ function OverviewTab({
                         <BreakdownRow key={item.label} {...item} />
                     ))}
                     <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
-                        Based on linked and uploaded statements
+                        <span className="font-semibold text-slate-500">How it's calculated:</span>{' '}
+                        Total Assets (cash + investments + crypto + property) minus Total Liabilities (loans + credit), across all linked and uploaded statements.
                     </p>
                 </MetricCard>
 
-                {/* ── 2. Wellness Score ── */}
                 <MetricCard
                     title="Wellness score"
                     value={`${heroStats.wellness.score}/100`}
@@ -253,13 +249,11 @@ function OverviewTab({
                     accentColor="bg-brand-primary"
                     icon={Activity}
                 >
-                    {/* Status pill */}
                     <div className="mb-3 flex items-center gap-2">
                         <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${wellnessStatusColor}`}>
                             {heroStats.wellness.label}
                         </span>
                     </div>
-
                     {pillarScores.map((p) => (
                         <PillarRow
                             key={p.name}
@@ -270,13 +264,12 @@ function OverviewTab({
                             colorClass={p.colorClass}
                         />
                     ))}
-
                     <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
-                        Calculated from liquidity, diversification, risk alignment and digital exposure
+                        <span className="font-semibold text-slate-500">How it's calculated:</span>{' '}
+                        Weighted average of 4 pillars — Liquidity (25%), Diversification (25%), Risk Alignment (25%), and Digital Exposure (25%). Each pillar is scored 0–100.
                     </p>
                 </MetricCard>
 
-                {/* ── 3. Monthly Savings ── */}
                 <MetricCard
                     title="Monthly savings"
                     value={heroStats.savings.value}
@@ -302,8 +295,6 @@ function OverviewTab({
                             <span className="font-bold text-emerald-600">{savingsDetail.net}</span>
                         </div>
                     </div>
-
-                    {/* Savings rate bar */}
                     <div className="mt-3">
                         <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
                             <span>Savings rate</span>
@@ -322,9 +313,7 @@ function OverviewTab({
                 </MetricCard>
             </div>
 
-            {/* ═══════════════════════════════════════════════════
-                Pillar score cards — 2-column grid
-                ═══════════════════════════════════════════════════ */}
+            {/* ── Pillar score cards ── */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {pillarScores.map((pillar) => {
                     const Icon = pillar.icon || Sparkles
@@ -332,14 +321,16 @@ function OverviewTab({
                     return (
                         <article
                             key={pillar.name}
+                            // ✅ FIXED: removed overflow-hidden, added relative + isolate
+                            // overflow-hidden was clipping the InfoTooltip popup
                             className={
-                                'group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 ' +
+                                'group relative isolate rounded-2xl border border-slate-200/80 bg-white p-5 ' +
                                 'shadow-[0_2px_12px_rgba(15,23,42,0.04)] ' +
                                 'transition-all duration-300 ease-out ' +
                                 'hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:border-sky-200/60'
                             }
                         >
-                            {/* Left accent */}
+                            {/* Left accent bar — use pseudo via before or a positioned div instead */}
                             <span className={`absolute inset-y-0 left-0 w-1 rounded-l-2xl ${pillar.colorClass}`} />
 
                             <div className="flex items-center justify-between">
@@ -347,7 +338,15 @@ function OverviewTab({
                                     <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition-colors group-hover:bg-sky-50 group-hover:text-brand-primary">
                                         <Icon className="h-4 w-4"/>
                                     </span>
-                                    <h3 className="text-sm font-semibold text-slate-800">{pillar.name}</h3>
+                                    {/* ✅ FIXED: tooltip wrapper uses relative + z-50 so it escapes card stacking context */}
+                                    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                                        {pillar.name}
+                                        {pillar.calculationTooltip && (
+                                            <span className="relative z-50">
+                                                <InfoTooltip text={pillar.calculationTooltip} />
+                                            </span>
+                                        )}
+                                    </h3>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`text-sm font-bold ${pillar.textClass}`}>
@@ -369,9 +368,7 @@ function OverviewTab({
                 })}
             </div>
 
-            {/* ═══════════════════════════════════════════════════
-                Net Worth Trend chart
-                ═══════════════════════════════════════════════════ */}
+            {/* ── Net Worth Trend chart ── */}
             <article className={`${CARD_CLASS}`}>
                 <div className="mb-5 flex items-center justify-between">
                     <h2 className="text-base font-semibold text-slate-900">Net Worth Trend</h2>

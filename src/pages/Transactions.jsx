@@ -87,6 +87,7 @@ export default function Transactions() {
                     valueColor="text-teal-500"
                     changeText="+20% All Time"
                     changeColor="text-green-500"
+                    tooltip="Count of all debit and credit entries from your uploaded statements within the selected time filter."
                 />
                 <StatCard
                     title="Total Inflow"
@@ -94,6 +95,7 @@ export default function Transactions() {
                     valueColor="text-teal-500"
                     changeText="+12% All Time"
                     changeColor="text-green-500"
+                    tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds, and other deposits."
                 />
                 <StatCard
                     title="Total Outflow"
@@ -101,6 +103,7 @@ export default function Transactions() {
                     valueColor="text-teal-500"
                     changeText="+124% All Time"
                     changeColor="text-green-500"
+                    tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out, and withdrawals."
                 />
             </div>
         </div>

@@ -52,10 +52,26 @@ import { USER_PROFILE as MOCK_USER_PROFILE } from '../data/mockUserData.js'
 // ═══════════════════════════════════════════════════════════════════════════
 
 const PILLAR_META = {
-  liquidity:       { icon: Droplets,          label: 'Liquidity' },
-  diversification: { icon: CandlestickChart,  label: 'Diversification' },
-  risk_match:      { icon: ShieldAlert,       label: 'Risk Match' },
-  digital_health:  { icon: Sparkles,          label: 'Digital Assets' },
+  liquidity:       {
+    icon: Droplets,
+    label: 'Liquidity',
+    calculationTooltip: 'Score = (Cash buffer months ÷ 6) × 100, capped at 100. A 6-month cash buffer earns a perfect score.',
+  },
+  diversification: {
+    icon: CandlestickChart,
+    label: 'Diversification',
+    calculationTooltip: 'Score = 100 − largest position % + min(number of accounts × 10, 30). Penalises heavy concentration in a single asset.',
+  },
+  risk_match:      {
+    icon: ShieldAlert,
+    label: 'Risk Match',
+    calculationTooltip: 'Score = 100 − (crypto % × 0.5) − (unregulated % × 0.5). Lower crypto and unregulated exposure means better alignment with your risk profile.',
+  },
+  digital_health:  {
+    icon: Sparkles,
+    label: 'Digital Assets',
+    calculationTooltip: 'If digital exposure ≤ 30%: Score = 70 + digital %. Above 30%: Score = 100 − (digital % − 30) × 2. Ideal range is 5–30%.',
+  },
 }
 
 function pillarDescription(key, score) {
@@ -269,6 +285,7 @@ export default function useDashboardData() {
               ...scoreToColor(score),
               icon: meta.icon,
               description: pillarDescription(key, score),
+              calculationTooltip: meta.calculationTooltip,
             }
           }),
         )
