@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import './index.css'
 import App, { AdvisoryPage, NotFoundPage, PrivacyPage } from './App.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import Privacy from './pages/Privacy.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -13,7 +14,7 @@ createRoot(document.getElementById('root')).render(
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="advisory" element={<AdvisoryPage />} />
-          <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="privacy" element={<Privacy />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
