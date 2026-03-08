@@ -13,6 +13,36 @@ const fmtAmt = (amount) => {
 const fmt = (n) =>
   Number(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+const TX_FILTERS = ['All Time', 'Daily', 'Monthly', 'Yearly']
+
+function filterTransactions(transactions, filter) {
+  if (filter === 'All Time') return transactions
+
+  const now = new Date()
+  return transactions.filter((tx) => {
+    const txDate = new Date(tx.date)
+    if (isNaN(txDate)) return true // keep if date is unparseable
+
+    if (filter === 'Daily') {
+      return (
+        txDate.getDate() === now.getDate() &&
+        txDate.getMonth() === now.getMonth() &&
+        txDate.getFullYear() === now.getFullYear()
+      )
+    }
+    if (filter === 'Monthly') {
+      return (
+        txDate.getMonth() === now.getMonth() &&
+        txDate.getFullYear() === now.getFullYear()
+      )
+    }
+    if (filter === 'Yearly') {
+      return txDate.getFullYear() === now.getFullYear()
+    }
+    return true
+  })
+}
+
 export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
   const {
     monthlyBudget: vmBudget = 0,
@@ -21,7 +51,6 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
     emergencySavingsTarget = 0,
     emergencySavingsCurrent = 0,
     emergencySavingsPct = 0,
-    categorySpending = [],
     transactionSummary = {},
     recentTransactions: vmTransactions = [],
     emptyState,
@@ -32,6 +61,7 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
   const [budgetInput, setBudgetInput] = useState('')
   const [budget, setBudget] = useState(vmBudget || 0)
   const [transactions, setTransactions] = useState(vmTransactions)
+  const [txFilter, setTxFilter] = useState('All Time')
 
   // Sync when viewModel refreshes
   const spent = spentThisMonth
@@ -53,6 +83,42 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
   }
 
   const emergencyGap = Math.max(0, emergencySavingsTarget - emergencySavingsCurrent)
+  const filteredTransactions = filterTransactions(transactions, txFilter)
+
+  // Derive category spending from filtered transactions (outflows only)
+  const CATEGORY_COLORS = {
+    Transport:     '#22c55e',
+    Food:          '#ef4444',
+    Bills:         '#84cc16',
+    Unknown:       '#9ca3af',
+    Paynow:        '#a855f7',
+    Groceries:     '#ec4899',
+    Entertainment: '#3b82f6',
+    Health:        '#06b6d4',
+    Shopping:      '#f97316',
+    Housing:       '#6366f1',
+    Investment:    '#3b82f6',
+    Utilities:     '#94a3b8',
+  }
+
+  const derivedCategorySpending = (() => {
+    const totals = {}
+    filteredTransactions.forEach((tx) => {
+      if (tx.amount < 0) {
+        const cat = tx.category || 'Unknown'
+        totals[cat] = (totals[cat] || 0) + Math.abs(tx.amount)
+      }
+    })
+    const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0)
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, amount]) => ({
+        category,
+        amount,
+        percentage: grandTotal > 0 ? Math.round((amount / grandTotal) * 100) : 0,
+        color: CATEGORY_COLORS[category] ?? '#9ca3af',
+      }))
+  })()
 
   /* ── Empty state ─────────────────────────────────── */
   if (!hasData) {
@@ -152,9 +218,26 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       </div>
 
       {/* ── Transactions header ───────────────────── */}
-      <div className="px-1 mt-8">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Transactions</h2>
-        <span className="mt-1 text-sm text-slate-600">Transaction history and current spending</span>
+      <div className="px-1 mt-8 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Transactions</h2>
+          <span className="mt-1 text-sm text-slate-600">Transaction history and current spending</span>
+        </div>
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+          {TX_FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setTxFilter(f)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                txFilter === f
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -185,7 +268,7 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       {/* ── Transaction table ─────────────────────── */}
       <div className={CARD_CLASS}>
         <div className="overflow-hidden">
-          <div className="overflow-auto" style={{ maxHeight: '520px' }}>
+          <div className="overflow-auto" style={filteredTransactions.length > 0 ? { maxHeight: '520px' } : undefined}>
             <table className="w-full">
               <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-gray-100">
@@ -199,14 +282,14 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
                 </tr>
               </thead>
               <tbody>
-                {transactions.length === 0 ? (
+                {filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
                       No transactions to display.
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((tx, i) => (
+                  filteredTransactions.map((tx, i) => (
                     <tr key={tx.id ?? i} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
                       <td className="px-5 py-3 text-sm text-gray-900 font-medium truncate max-w-0 w-[30%]">
                         {tx.source}
@@ -238,11 +321,11 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       </div>
 
       {/* ── Category spending ─────────────────────── */}
-      {categorySpending.length > 0 && (
+      {derivedCategorySpending.length > 0 && (
         <div className={`${CARD_CLASS} col-span-1`}>
           <p className="text-sm text-gray-500 font-medium mb-4">Spending by Category — This Month</p>
           <div className="space-y-3">
-            {categorySpending.map((item) => (
+            {derivedCategorySpending.map((item) => (
               <div key={item.category} className="flex items-center gap-3">
                 <span className="text-xs text-gray-600 w-28 shrink-0">{item.category}</span>
                 <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
