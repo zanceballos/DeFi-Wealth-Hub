@@ -20,7 +20,7 @@
  *   }
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/firebase.js'
 import {
   collection,
@@ -41,9 +41,7 @@ import {
   buildBudgetViewModel,
   safeNumber,
 } from '../services/dashboardViewModel.js'
-
-// Live market data (Alpha Vantage)
-import { getStockPrice, makeSymbolRotator } from '../services/marketDataService.js'
+import { getYfPrice } from '../services/marketDataService.js'
 
 // ── Mock fallback data (original static constants) ──
 import { HERO_STATS as MOCK_HERO } from '../data/mockHero.js'
@@ -435,163 +433,179 @@ export default function useDashboardData() {
   }, [fetchData])
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Live stock price updates (Alpha Vantage) — every ~30 seconds
-  // - Computes live market value for manual stock investments (sum(lots.quantity) × latestPrice)
-  // - Rebuilds Overview breakdown combining statement totals + manual cash + manual crypto (cost basis) + live stocks
-  // - Skips if no API key or no stock investments; cleans up interval on unmount.
+  // Manual holdings aggregation helpers (quantities per asset by type)
   // ═══════════════════════════════════════════════════════════════════════════
-  const symbolRotatorRef = useRef(null)
-  const priceCacheRef = useRef(new Map()) // symbol -> last price number
+  const manualHoldings = useMemo(() => {
+    const profile = raw.profile
+    const investments = profile?.manual_accounts?.investments
+    const accounts = profile?.manual_accounts?.accounts
 
-  // Precompute manual figures and base statement totals whenever raw changes
-  const liveInputs = useMemo(() => {
-    const profile = raw.profile || {}
-    const manualAccounts = profile?.manual_accounts?.accounts
-    const manualInvestments = profile?.manual_accounts?.investments
-
-    const manualCash = Array.isArray(manualAccounts)
-      ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+    // Cash total from accounts
+    const manualCash = Array.isArray(accounts)
+      ? accounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
       : 0
 
-    // Statement totals baseline
-    const totalsBase = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
-    let grandBase = 0
-    const activeStmts = (raw.statements || []).filter(
-      (s) => s.status === 'parsed' || s.status === 'approved',
-    )
+    const stocks = new Map() // symbol -> totalQty
+    const crypto = new Map() // symbol -> totalQty
+
+    if (Array.isArray(investments)) {
+      for (const inv of investments) {
+        const lots = Array.isArray(inv?.lots) ? inv.lots : []
+        const qtyTotal = lots.reduce((s, l) => s + safeNumber(l?.quantity), 0)
+        const symbolRaw = (inv?.asset ?? '').trim()
+        if (!symbolRaw || qtyTotal <= 0) continue
+        const symbol = symbolRaw.toUpperCase()
+        const type = (inv?.type || '').toLowerCase()
+        if (type === 'crypto') {
+          crypto.set(symbol, (crypto.get(symbol) || 0) + qtyTotal)
+        } else {
+          // default and stocks_etfs bucket
+          stocks.set(symbol, (stocks.get(symbol) || 0) + qtyTotal)
+        }
+      }
+    }
+
+    return { manualCash, stocks, crypto }
+  }, [raw.profile])
+
+  // Helper: rebuild net worth breakdown combining statements + manual cash + provided live valuations
+  const rebuildBreakdown = useCallback(({ liveStocksValue = null, liveCryptoValue = null } = {}) => {
+    const activeStmts = Array.isArray(raw.statements)
+      ? raw.statements.filter((s) => s.status === 'parsed' || s.status === 'approved')
+      : []
+
+    const totals = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
+    let grand = 0
     for (const stmt of activeStmts) {
       const bd = stmt.asset_class_breakdown ?? {}
-      for (const key of Object.keys(totalsBase)) {
+      for (const key of Object.keys(totals)) {
         const v = safeNumber(bd[key])
-        totalsBase[key] += v
-        grandBase += v
+        totals[key] += v
+        grand += v
       }
     }
 
-    // Build stocks aggregation + symbols list, and crypto total (cost basis)
-    let manualStocksByAsset = new Map() // asset -> totalQuantity across lots
-    let manualCrypto = 0
-    let stockSymbols = []
-    if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
-      for (const inv of manualInvestments) {
-        const lots = Array.isArray(inv?.lots) ? inv.lots : []
-        const t = (inv?.type || '').toLowerCase()
-        const qtySum = lots.reduce((sum, lot) => sum + safeNumber(lot?.quantity), 0)
-        if (!qtySum) continue
-
-        if (t === 'crypto') {
-          // For crypto we keep cost basis only (no API provided here)
-          const cost = lots.reduce((sum, lot) => sum + safeNumber(lot?.quantity) * safeNumber(lot?.averageCost), 0)
-          manualCrypto += cost
-        } else {
-          const asset = (inv?.asset || '').trim().toUpperCase()
-          if (asset) {
-            manualStocksByAsset.set(asset, (manualStocksByAsset.get(asset) || 0) + qtySum)
-            stockSymbols.push(asset)
-          }
-        }
-      }
+    // Add manual cash
+    if (manualHoldings.manualCash > 0) {
+      totals.cash += manualHoldings.manualCash
+      grand += manualHoldings.manualCash
     }
 
-    // Unique symbols
-    stockSymbols = Array.from(new Set(stockSymbols))
+    // Stocks & crypto: prefer live valuations if provided, otherwise keep existing statement totals only
+    if (liveStocksValue != null && liveStocksValue > 0) {
+      // Replace or augment stocks bucket: we add live value on top of statements
+      totals.stocks += liveStocksValue
+      grand += liveStocksValue
+    }
+    if (liveCryptoValue != null && liveCryptoValue > 0) {
+      totals.crypto += liveCryptoValue
+      grand += liveCryptoValue
+    }
 
-    return { totalsBase, manualCash, manualCrypto, manualStocksByAsset, stockSymbols }
-  }, [raw])
+    const breakdown = Object.entries(totals)
+      .filter(([, v]) => v > 0)
+      .map(([key, v]) => ({
+        color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
+        label:   BREAKDOWN_LABELS[key] ?? key,
+        value:   fmtCurrency(v),
+        percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
+      }))
 
+    if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
+  }, [raw.statements, manualHoldings])
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Periodic price updates via yfinance-defi
+  //  - Stocks every 24 hours
+  //  - Crypto every 1 hour
+  // Writes to Firestore under users/{uid}/live_quotes/{SYMBOL}
+  // Also updates local netWorthBreakdown so UI reflects changes without extra listeners.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Stocks (24h)
   useEffect(() => {
-    const { stockSymbols } = liveInputs
-    // If no stocks to update, do nothing
-    if (!stockSymbols || stockSymbols.length === 0) return
+    if (!uid) return
+    const symbols = Array.from(manualHoldings.stocks.keys())
+    if (symbols.length === 0) return
 
-    // Initialize or refresh rotator with current symbols
-    symbolRotatorRef.current = makeSymbolRotator(stockSymbols)
+    let cancelled = false
 
-    let isCancelled = false
+    async function runOnce() {
+      // Fetch all stock symbols; daily cadence so burst should be acceptable if list is small
+      const prices = await Promise.all(symbols.map((s) => getYfPrice(s, { ttlMs: 24 * 60 * 60 * 1000 })))
+      if (cancelled) return
 
-    const tick = async () => {
-      if (isCancelled) return
-      const nextSymbol = symbolRotatorRef.current ? symbolRotatorRef.current() : null
-      if (!nextSymbol) return
-      const price = await getStockPrice(nextSymbol, { ttlMs: 60_000 })
-      if (Number.isFinite(price)) {
-        priceCacheRef.current.set(nextSymbol, price)
-
-        // Persist latest quote to Firestore for auditing/other consumers
-        // Do not block UI on failures
-        if (uid) {
-          try {
-            const quoteRef = doc(db, 'users', uid, 'live_quotes', nextSymbol)
-            await setDoc(
-              quoteRef,
-              {
-                price,
-                updatedAt: serverTimestamp?.() || new Date(),
-                source: 'alphavantage',
-                symbol: nextSymbol,
-              },
-              { merge: true },
-            )
-          } catch (e) {
-            if (import.meta?.env?.MODE !== 'production') {
-              console.warn('Failed to persist live quote for', nextSymbol, e)
-            }
-          }
+      // Persist and compute valuation
+      let liveStocksValue = 0
+      await Promise.all(symbols.map(async (s, i) => {
+        const price = Number(prices[i])
+        if (!Number.isFinite(price) || price <= 0) return
+        const qty = manualHoldings.stocks.get(s) || 0
+        liveStocksValue += qty * price
+        try {
+          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
+            symbol: s,
+            price,
+            source: 'yfinance-defi',
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        } catch (e) {
+          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
         }
-        // Rebuild breakdown with latest prices
-        const { totalsBase, manualCash, manualCrypto, manualStocksByAsset } = liveInputs
+      }))
 
-        // Compute live stocks market value
-        let liveStocksTotal = 0
-        for (const [asset, qty] of manualStocksByAsset.entries()) {
-          const p = priceCacheRef.current.get(asset)
-          if (Number.isFinite(p)) {
-            liveStocksTotal += qty * p
-          }
-        }
-
-        // If we have at least one priced stock or any manual values, update breakdown
-        const hasManualValues = manualCash > 0 || manualCrypto > 0 || manualStocksByAsset.size > 0
-        if (!hasManualValues) return
-
-        const totals = { ...totalsBase }
-        if (manualCash > 0) totals.cash += manualCash
-        if (manualCrypto > 0) totals.crypto += manualCrypto
-
-        // For stocks, prefer live value if available; else leave base statement value
-        if (liveStocksTotal > 0) {
-          // Replace statement-based stocks share with live manual stocks on top of it
-          totals.stocks += liveStocksTotal
-        } else {
-          // If no prices yet, approximate using cost basis of manual stocks (handled earlier in fetchData)
-          // Do nothing here to avoid double-counting; initial breakdown already includes cost basis.
-        }
-
-        const grand = Object.values(totals).reduce((a, b) => a + b, 0)
-        const nextBreakdown = Object.entries(totals)
-          .filter(([, v]) => v > 0)
-          .map(([key, v]) => ({
-            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
-            label:   BREAKDOWN_LABELS[key] ?? key,
-            value:   fmtCurrency(v),
-            percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
-          }))
-
-        // Update state
-        setNetWorthBreakdown(nextBreakdown)
-      }
+      rebuildBreakdown({ liveStocksValue })
     }
 
-    // Run every 30 seconds; also trigger an immediate tick to seed first symbol soon
-    const id = setInterval(tick, 30_000)
-    // Kick off immediately (non-blocking)
-    tick()
-
+    runOnce()
+    const interval = setInterval(runOnce, 86_400_000) // 24h
     return () => {
-      isCancelled = true
-      clearInterval(id)
+      cancelled = true
+      clearInterval(interval)
     }
-  }, [liveInputs])
+  }, [uid, manualHoldings.stocks, rebuildBreakdown])
+
+  // Crypto (1h)
+  useEffect(() => {
+    if (!uid) return
+    const symbols = Array.from(manualHoldings.crypto.keys())
+    if (symbols.length === 0) return
+
+    let cancelled = false
+
+    async function runOnce() {
+      // yfinance-defi expects crypto pairs like BTC-USD; append "-USD" if not already present
+      const pairSymbols = symbols.map((s) => (s.includes('-') ? s : `${s}-USD`))
+      const prices = await Promise.all(pairSymbols.map((ps) => getYfPrice(ps, { ttlMs: 60 * 60 * 1000 })))
+      if (cancelled) return
+      let liveCryptoValue = 0
+      await Promise.all(symbols.map(async (s, i) => {
+        const price = Number(prices[i])
+        if (!Number.isFinite(price) || price <= 0) return
+        const qty = manualHoldings.crypto.get(s) || 0
+        liveCryptoValue += qty * price
+        try {
+          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
+            symbol: s,
+            price,
+            source: 'yfinance-defi',
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        } catch (e) {
+          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
+        }
+      }))
+
+      rebuildBreakdown({ liveCryptoValue })
+    }
+
+    runOnce()
+    const interval = setInterval(runOnce, 3_600_000) // 1h
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [uid, manualHoldings.crypto, rebuildBreakdown])
 
   // ── Return ────────────────────────────────────────────────────────────
   return {

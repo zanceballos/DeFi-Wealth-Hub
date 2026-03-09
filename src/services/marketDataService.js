@@ -1,60 +1,54 @@
-// Lightweight Alpha Vantage market data helper with basic caching and rate limiting
+// Lightweight market data fetcher for yfinance-defi API with simple in-memory cache
 
-const cache = new Map() // key: ticker, value: { price: number, at: number }
+const DEFAULT_BASE = import.meta?.env?.VITE_MARKETDATA_BASE || 'https://yfinance-defi-api.stocksuite.app'
 
-const ONE_MINUTE = 60 * 1000
+// cache: { [key: string]: { price: number, asOf: number, expiresAt: number } }
+const cache = new Map()
 
-function getApiKey() {
-  // Vite exposes env vars under import.meta.env
-  return (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_ALPHAVANTAGE_KEY || import.meta.env.VITE_ALPHA_VANTAGE_KEY))
+function now() { return Date.now() }
+
+function toKey(asset) {
+  return String(asset || '').trim().toUpperCase()
 }
 
-export async function getStockPrice(ticker, { ttlMs = ONE_MINUTE } = {}) {
-  const symbol = String(ticker || '').trim().toUpperCase()
-  if (!symbol) return null
+export async function getYfPrice(asset, opts = {}) {
+  const ttlMs = Number.isFinite(opts.ttlMs) ? opts.ttlMs : 5 * 60 * 1000 // 5 minutes default
+  const key = toKey(asset)
+  if (!key) return null
 
-  const now = Date.now()
-  const hit = cache.get(symbol)
-  if (hit && now - hit.at < ttlMs) {
+  const hit = cache.get(key)
+  if (hit && hit.expiresAt > now()) {
     return hit.price
   }
 
-  const API_KEY = getApiKey()
-  if (!API_KEY) {
-    // In dev, warn once per symbol per minute
-    if (!hit) console.warn('[marketDataService] Missing VITE_ALPHAVANTAGE_KEY; skipping live price for', symbol)
-    return hit?.price ?? null
-  }
-
-  const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${API_KEY}`
+  const url = `${DEFAULT_BASE}/price/${encodeURIComponent(key)}`
   try {
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const data = await resp.json()
-    const quote = data?.['Global Quote'] || data?.GlobalQuote || {}
-    const rawPrice = quote['05. price'] || quote['05.price'] || quote.price
-    const price = rawPrice != null ? Number(rawPrice) : null
-    if (Number.isFinite(price)) {
-      cache.set(symbol, { price, at: now })
-      return price
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json().catch(() => ({}))
+
+    // Try common shapes: { price }, { data: { price } }, number
+    let price = undefined
+    if (typeof data === 'number') {
+      price = data
+    } else if (data && typeof data === 'object') {
+      price = data.price ?? data?.data?.price ?? data?.c ?? data?.regularMarketPrice
+    }
+
+    const num = Number(price)
+    if (!Number.isFinite(num) || num <= 0) return null
+
+    cache.set(key, { price: num, asOf: now(), expiresAt: now() + ttlMs })
+    return num
+  } catch (e) {
+    // swallow in prod; surface during dev
+    if (import.meta?.env?.DEV) {
+      console.warn('getYfPrice failed', { asset: key, error: e })
     }
     return null
-  } catch (e) {
-    if (import.meta?.env?.MODE !== 'production') {
-      console.warn('[marketDataService] Failed to fetch price for', symbol, e)
-    }
-    return hit?.price ?? null
   }
 }
 
-// Simple round-robin iterator over symbols to respect Alpha Vantage 5 req/min rate limit
-export function makeSymbolRotator(symbols) {
-  const list = Array.from(new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean)))
-  let idx = 0
-  return function next() {
-    if (list.length === 0) return null
-    const s = list[idx]
-    idx = (idx + 1) % list.length
-    return s
-  }
+export function clearMarketCache() {
+  cache.clear()
 }
