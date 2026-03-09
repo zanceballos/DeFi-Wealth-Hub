@@ -83,6 +83,52 @@ export default function SignUpPage() {
     setSubmitting(false);
   }
 
+  // Add this helper outside the component, below VALUE_POINTS
+  function getPasswordStrength(password) {
+    if (!password) return null;
+    let score = 0;
+    if (password.length >= 8) score++; // length
+    if (password.length >= 12) score++; // longer
+    if (/[A-Z]/.test(password)) score++; // uppercase
+    if (/[0-9]/.test(password)) score++; // number
+    if (/[^A-Za-z0-9]/.test(password)) score++; // special char
+
+    if (score <= 1)
+      return {
+        label: "Weak",
+        color: "#EF4444",
+        bars: 1,
+        textColor: "text-red-400",
+      };
+    if (score === 2)
+      return {
+        label: "Fair",
+        color: "#F59E0B",
+        bars: 2,
+        textColor: "text-amber-400",
+      };
+    if (score === 3)
+      return {
+        label: "Good",
+        color: "#3B82F6",
+        bars: 3,
+        textColor: "text-blue-400",
+      };
+    if (score === 4)
+      return {
+        label: "Strong",
+        color: "#10B981",
+        bars: 4,
+        textColor: "text-emerald-400",
+      };
+    return {
+      label: "Very Strong",
+      color: "#00C9B1",
+      bars: 5,
+      textColor: "text-teal-400",
+    };
+  }
+
   const loading = submitting || authLoading;
   const displayError = localError || authError;
 
@@ -294,6 +340,75 @@ export default function SignUpPage() {
                   )}
                 </button>
               </div>
+
+              {/* ── Password strength indicator ── */}
+              {password &&
+                (() => {
+                  const strength = getPasswordStrength(password);
+                  return (
+                    <div className="mt-2 space-y-1.5">
+                      {/* Bars */}
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((bar) => (
+                          <div
+                            key={bar}
+                            className="h-1 flex-1 rounded-full transition-all duration-300"
+                            style={{
+                              background:
+                                bar <= strength.bars
+                                  ? strength.color
+                                  : "rgba(255,255,255,0.08)",
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Label + tips */}
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-xs font-semibold ${strength.textColor}`}
+                        >
+                          {strength.label}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {strength.bars < 5 &&
+                            "Add uppercase, numbers & symbols to strengthen"}
+                        </span>
+                      </div>
+
+                      {/* Checklist */}
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pt-0.5">
+                        {[
+                          {
+                            label: "At least 8 characters",
+                            met: password.length >= 8,
+                          },
+                          {
+                            label: "Uppercase letter",
+                            met: /[A-Z]/.test(password),
+                          },
+                          { label: "Number", met: /[0-9]/.test(password) },
+                          {
+                            label: "Special character",
+                            met: /[^A-Za-z0-9]/.test(password),
+                          },
+                        ].map(({ label, met }) => (
+                          <span
+                            key={label}
+                            className={`flex items-center gap-1 text-[11px] transition-colors ${
+                              met ? "text-emerald-400" : "text-slate-500"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full ${met ? "bg-emerald-400" : "bg-slate-600"}`}
+                            />
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
             </div>
 
             <div>
