@@ -8,28 +8,29 @@
 ![InternVL](https://img.shields.io/badge/InternVL-000000?style=for-the-badge&logoColor=white)
 ![Recharts](https://img.shields.io/badge/Recharts-22b5bf?style=for-the-badge&logoColor=white)
 
-> **A privacy-first AI financial cockpit** — upload statements or sync Gmail to parse, track, and act on your finances without sharing bank credentials.
 
-## 💡 What It Does
+### **[🌐 View Live App - https://defi-wealth-hub.web.app](https://defi-wealth-hub.web.app)**
 
-DeFi Wealth Hub unifies banking, crypto, and investment data into one dashboard through **two zero-credential ingestion channels**:
+> **A privacy-first AI financial cockpit** — parse, track, and act on your finances without sharing bank credentials.
 
-| Channel | How It Works |
-|---------|-------------|
-| **📄 Manual Upload + InternVL AI** | Upload PDF/CSV bank statements → InternVL vision model extracts transactions → human review overlay for accuracy |
-| **📧 Gmail Sync + Auto-Parse** | OAuth-connect Gmail → auto-detect transaction alert emails (DBS, OCBC, UOB, GrabPay, etc.) → deduplicated and categorised |
+## 💡 FinTech Innovator's Hackathon - Problem Statement 1
+Personal finance data is fragmented. Users juggle crypto, TradFi, and broker platforms. Existing apps either force you to hand over highly sensitive bank login credentials or rely on manual, error-prone spreadsheet tracking. 
 
-Both channels feed a unified Firestore-backed dashboard with net-worth tracking, asset allocation charts, AI-powered financial advisory (Groq / Llama 3.3 70B), smart budgeting, live crypto prices via yfinance, and a privacy hub for full data control.
+## ✅ Our Solution
+DeFi Wealth Hub unifies your assets into one secure dashboard via **two zero-credential ingestion channels**:
+1. **📄 Manual Upload + AI:** InternVL vision AI extracts transactions from PDF/CSV statements, verified via a human-in-the-loop review overlay.
+2. **📧 Gmail Sync:** Secure OAuth-connection auto-parses Bank transaction alerts (DBS, OCBC, UOB, GrabPay).
 
-## 🛠 Tech Stack
+These feed a unified Firestore dashboard featuring net-worth tracking, persistent budgeting, and a 4-pillar Wellness Score. A dedicated Groq (Llama 3.3 70B) AI Advisory engine generates personalised financial roadmaps, while our Privacy Hub gives you total surgical control over your data.
 
-React 19 · Vite 7 · Firebase 12 (Auth + Firestore + Storage + Hosting) · Tailwind CSS 4 · Groq AI · InternVL · yfinance · Recharts
+---
 
 ## 👨‍💻 Team
+Built at **NTU** by Nicholas, Izzan, Kang, Li Zhong, and Zheng Rong.
 
-Nicholas · Izzan · Kang · Li Zhong · Zheng Rong — NTU
-
-## 📚 Documentation
-
-- **Live Docs:** [defi-wealth-hub.web.app/docs](https://defi-wealth-hub.web.app/docs)
-- **Full Reference:** [docs/full-documentation.md](docs/full-documentation.md)
+## 🚀 Quick Start
+```bash
+git clone [https://github.com/nicolotan/DeFi-Wealth-Hub.git](https://github.com/nicolotan/DeFi-Wealth-Hub.git)
+cd DeFi-Wealth-Hub
+npm install
+npm run dev
