@@ -14,7 +14,7 @@ import { useAuthContext } from '../../../hooks/useAuthContext.js'
 import { recalculateNetWorth } from '../../../services/financialDataService.js'
 
 const CARD_CLASS =
-    'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5'
+    'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-4 sm:p-5'
 
 
 function CurrencyTooltip({active, payload, label}) {
@@ -92,7 +92,7 @@ function OverviewTab({
         <div className="space-y-6">
             {/* ── Greeting header ── */}
             <header className="px-1">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
                     Welcome Back, {userProfile.name.split(' ')[0]} 👋
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">

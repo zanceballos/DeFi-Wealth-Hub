@@ -70,8 +70,8 @@ A three-tab command centre for your entire financial life.
 
 | Tab | What It Shows |
 | :--- | :--- |
-| **Overview** | Net worth history chart, overall wellness score, four financial health pillars (Liquidity, Diversification, Risk Match, Digital Health), savings rate, and hero stat cards |
-| **Budgeting** | Category-based spending breakdown with progress bars, inflow vs. outflow analysis, monthly budget tracking, recent transactions list with merchant detection |
+| **Overview** | Net worth history chart, overall wellness score, four financial health pillars (Liquidity, Diversification, Risk Match, Digital Health), savings rate, hero stat cards, **editable monthly income** (inline edit with auto-wellness recalc) |
+| **Budgeting** | **Persistent monthly budget** (saved to Firestore), category spending breakdown, emergency savings tracker (6× expenses target), recent transactions with merchant detection, **transaction exclude/restore** (fingerprint-based), Gmail sync controls, email transaction review (pending/approved/rejected tabs) |
 | **Wallet** | Platform-level asset allocation pie chart, per-platform rows with risk labels (Core / Stable / Growth / Speculative), regulated vs. unregulated exposure |
 
 - All data is **live from Firestore** — every upload refreshes your numbers in real time
@@ -130,11 +130,15 @@ A robust, multi-step document workflow that keeps the human in control at every 
 
 Turn parsed transaction data into practical budget signals.
 
+- **Persistent monthly budget** — user-set budget saved to Firestore; falls back to `monthly_expenses` if unset
+- **Budget progress bar** — spent this month vs. budget, remaining amount
+- **Emergency savings tracker** — target = monthly expenses × 6; current = cash-like assets; progress bar + percentage
 - **Category spending** — visual progress bars for Food, Transport, Shopping, Entertainment, Utilities, etc.
 - **Recent transactions** — merchant-tagged list with signed amounts and dates
-- **Inflow vs. outflow** — monthly cash flow summary derived directly from statement transactions
-- **Emergency fund** — savings rate tracking relative to monthly income
-- **Merchant detection** — automatically recognises Grab, NTUC, Shopee, Netflix, Spotify, and more from raw descriptions
+- **Transaction exclude/restore** — fingerprint-based (`date#amount#description`); excluded tx hidden from budget calculations; reversible
+- **Gmail sync controls** — link/unlink Gmail, manual sync button, last sync timestamp
+- **Email transaction review** — pending/approved/rejected tabs with inline edit
+- **Merchant detection** — auto-recognises Grab, NTUC, Shopee, Netflix, Spotify, and more from raw descriptions
 
 ### 👛 Wallet & Asset Allocation
 
@@ -151,16 +155,63 @@ Secure, frictionless user lifecycle.
 
 - **Firebase Auth** — email/password and Google OAuth sign-in
 - **Protected routes** — all dashboard and advisory pages gated behind authentication
-- **3-step onboarding** — collects name, monthly income/expenses, and risk profile on first login
+- **2-step onboarding** — collects name, then monthly income/expenses on first login
 - **Persistent profile** — data saved to Firestore at `/users/{uid}`, automatically loaded on every session
+- **Password reset** — dedicated `/forgot-password` page via Firebase password reset email
 
 ### 🔒 Privacy Hub
 
-A dedicated `/privacy` page so users always understand their data footprint.
+A dedicated `/privacy` page so users always understand their data footprint and have full control over their data.
 
 - See exactly which documents were uploaded and from which institutions
 - View what was parsed and what is actively used for analytics
-- Full transparency — no hidden data processing
+- **Delete individual statements** — removes statement + all transactions in subcollection
+- **Delete all statements** — batch delete all statements + subcollections
+- **Delete all email transactions** — batch delete all email tx docs
+- **Delete email transactions by date** — deletes only transactions for a specific date key
+- **Full account reset** — deletes statements + email tx + wellness + net worth history + clears manual accounts
+- **Gmail link/unlink** — shows connected email; link or revoke OAuth
+- Post-delete auto-recalculation of wellness score and net worth
+
+### 📧 Gmail Transaction Sync
+
+Auto-import transaction alert emails from Singapore banks via Google OAuth.
+
+```
+User connects Gmail → OAuth token (gmail.readonly) → Query transaction emails
+      → Parse with emailParser.js → Dedup against Firestore → Save new tx
+```
+
+- **Supported banks:** DBS, OCBC, UOB, MariBank, GrabPay, PayNow
+- **Auto-polling:** Every 5 minutes if OAuth token is valid
+- **Manual sync** button on Budgeting tab
+- **Email transaction review:** Pending / Approved / Rejected tabs with inline edit, approve, reject
+- **Deduplication** — Gmail message ID prevents duplicate imports
+- **Firestore:** `/users/{uid}/emailTransactions/{txId}` with status, merchant, category, direction fields
+
+### 📋 Manual Accounts & Investment Lots
+
+First-time users can manually enter their financial accounts without uploading statements.
+
+- **Bank accounts** — add accounts with name, type (Savings/Current), balance
+- **Investment positions** — add assets with type (stocks_etfs/crypto) and purchase lots (date, quantity, average cost)
+- Saved to `users/{uid}.manual_accounts = { accounts[], investments[] }`
+- Auto-triggers `recalculateNetWorth()` after save
+
+### 📈 Live Crypto & Stock Prices
+
+Real-time price feeds via **yfinance** (open-source Python library, no API key required).
+
+- Backend endpoint: `{VITE_MARKETDATA_BASE}/price/{ticker}`
+- Default API: `https://yfinance-defi-api.stocksuite.app`
+- In-memory cache with 5-minute TTL to avoid rate limiting
+- Supports any ticker supported by yfinance (crypto, stocks, ETFs)
+
+### 🔒 Tab Gating
+
+- Budgeting and Wallet tabs are **locked with 🔒 icon** until user has accounts or statements
+- Tooltip: "Complete onboarding to unlock"
+- Defined in `src/features/dashboard/tabs.js` with `requiresAccounts: true`
 
 ---
 
@@ -173,16 +224,20 @@ src/
 ├── data/                # Mock data for development fallbacks
 ├── features/
 │   └── dashboard/
-│       ├── tabs.js      # Tab definitions (Overview, Budgeting, Wallet)
-│       └── components/  # OverviewTab, BudgetingTab, WalletTab, Overlay
-├── hooks/               # useAuth, useAuthContext, useFirestore, useDashboardData
+│       ├── tabs.js      # Tab definitions + gating config (requiresAccounts)
+│       └── components/  # OverviewTab, BudgetingTab, WalletTab, Overlay, EmptyState, EmailTransactionsSection
+├── hooks/               # useAuth, useAuthContext, useFirestore, useDashboardData, useEmailTransactions, useGmailLink, usePrivacy, useUser
 ├── lib/                 # Firebase initialisation (auth, db, storage)
-├── pages/               # Dashboard, AdvisoryPage, LoginPage, SignUpPage, OnboardingPage
+├── pages/               # Dashboard, AdvisoryPage, LoginPage, SignUpPage, OnboardingPage, Privacy, DocsPage, ForgetPasswordPage
 └── services/
     ├── advisoryPayloadBuilder.js    # Firebase → Groq payload mapper
-    ├── dashboardViewModel.js        # Pure data transforms for dashboard tabs
-    ├── financialDataService.js      # Upload, wellness recompute, net worth history
+    ├── dashboardViewModel.js        # Pure data transforms for dashboard tabs + tx fingerprinting
+    ├── emailParser.js               # Client-side email parser (DBS, OCBC, UOB, GrabPay, PayNow, MariBank)
+    ├── emailTransactionService.js   # Email tx CRUD — approve, reject, edit, soft-delete
+    ├── financialDataService.js      # Upload, wellness recompute, net worth history, full reset
+    ├── gmailService.js              # Gmail OAuth + sync — token management, email fetch, dedup
     ├── groqAdvisoryService.js       # Groq API client with fallback + session cache
+    ├── marketDataService.js         # yfinance price API client with in-memory 5-min cache
     └── statementIngestionService.js # Statement + transaction subcollection writer
 ```
 
@@ -209,6 +264,41 @@ useDashboardData (hook) ────▶ dashboardViewModel ──▶ React UI
 advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ AdvisoryPage UI
 ```
 
+### Gmail Sync Data Flow
+
+```
+User clicks "Link Gmail"
+        │
+        ▼
+gmailService.initiateGmailLink() ──▶ Google OAuth popup (gmail.readonly scope)
+        │
+        ▼
+Saves gmailLinked=true + gmailEmail to Firestore /users/{uid}
+        │
+        ▼
+gmailService.syncGmailTransactions(uid)
+        │
+        ├──▶ Gmail REST API (query: transaction/payment/receipt emails, last 7 days)
+        │
+        ├──▶ emailParser.parseTransactionEmail() per email
+        │
+        ├──▶ Dedup against existing /users/{uid}/emailTransactions (by emailId)
+        │
+        └──▶ Write new tx to Firestore /users/{uid}/emailTransactions/{txId}
+                │
+                ▼
+        EmailTransactionsSection (Pending → Approve/Reject/Edit → affects budget)
+```
+
+### Market Data Flow
+
+```
+marketDataService.getYfPrice(ticker) ──▶ {VITE_MARKETDATA_BASE}/price/{ticker}
+        │                                  (yfinance Python backend)
+        ▼
+        In-memory cache (5-min TTL) ──▶ Returns price or null
+```
+
 ---
 
 ## Data Structure & Calculation Reference
@@ -223,8 +313,18 @@ This section documents the Firestore data model, how each metric is derived, and
 ├── name                    (string)   "John Doe"
 ├── monthly_income          (number)   4490
 ├── monthly_expenses        (number)   3458
+├── monthly_budget          (number)   ← NEW: user-set persistent budget
 ├── riskProfile             (string)   "moderate"
 ├── location                (string)   "Singapore"
+├── onboarding_complete     (boolean)  ← NEW
+├── gmailLinked             (boolean)  ← NEW: Gmail OAuth connected
+├── gmailEmail              (string)   ← NEW: connected Gmail address
+├── gmailLinkedAt           (timestamp) ← NEW
+├── lastGmailSync           (timestamp) ← NEW
+├── excluded_tx_fingerprints (string[]) ← NEW: array of "date#amt#desc"
+├── manual_accounts         (map)      ← NEW
+│   ├── accounts[]             [{name, type, balance}]
+│   └── investments[]          [{asset, type, lots: [{date, quantity, averageCost}]}]
 │
 ├── /statements/{statementId}
 │   ├── file_name                (string)   "DBS_Mar2026.pdf"
@@ -281,6 +381,22 @@ This section documents the Firestore data model, how each metric is derived, and
     ├── month_key    (string)   "2026-03"
     ├── value        (number)   86700
     └── updated_at   (timestamp)
+
+├── /emailTransactions/{txId}               ← NEW collection
+│   ├── emailId                 (string)   Gmail message ID (dedup key)
+│   ├── source                  (string)   "DBS"|"OCBC"|"UOB"|"GrabPay"|"PayNow"|"MariBank"
+│   ├── merchant                (string)
+│   ├── date                    (string)   "2026-03-01"
+│   ├── time                    (string)   "14:30"
+│   ├── amount                  (number)
+│   ├── direction               (string)   "debit"|"credit"
+│   ├── currency                (string)   "SGD"
+│   ├── category                (string)
+│   ├── status                  (string)   "pending"|"approved"|"rejected"
+│   ├── deleted                 (boolean)  soft-delete flag
+│   ├── edited                  (boolean)
+│   ├── createdAt               (timestamp)
+│   └── updatedAt               (timestamp)
 ```
 
 ### Intermediate Aggregation Values
@@ -397,7 +513,7 @@ overallScore = round((liquidityScore + diversificationScore + riskMatchScore + d
 
 | Metric | Formula | Example |
 | :--- | :--- | :--- |
-| `monthlyBudget` | `profile.monthly_expenses` | S$3,458 |
+| `monthlyBudget` | `profile.monthly_budget` (fallback: `monthly_expenses`) | S$3,458 |
 | `spentThisMonth` | `Σ stmt.parsed_data.total_debits` (current month statements) | S$2,100 |
 | `remainingBudget` | `max(monthlyBudget − spentThisMonth, 0)` | S$1,358 |
 | `emergencySavingsTarget` | `monthlyExpenses × 6` | 3458 × 6 = **S$20,748** |
@@ -490,6 +606,7 @@ overallScore = round((100 + 86 + 83 + 87) / 4) = 89  →  🟢 Excellent Health
 | **Storage** | Firebase Storage | Secure file uploads with per-user path rules |
 | **AI Parsing** | InternVL | Vision-language model for extracting structured data from statement PDFs |
 | **AI Advisory** | Groq (Llama 3.3 70B) | Ultra-fast inference, structured JSON output, Singapore-aware financial prompting |
+| **Crypto Data** | yfinance (Python) | Open-source, no API key required, live crypto + stock prices via backend service |
 | **Charts** | Recharts 3.7 | Declarative React charts — PieChart, LineChart, RadarChart |
 | **Icons** | Lucide React | Consistent, tree-shakeable icon library |
 | **Routing** | React Router 7 | Nested layouts, protected route wrappers, NavLink active states |
@@ -505,6 +622,7 @@ overallScore = round((100 + 86 + 83 + 87) / 4) = 89  →  🟢 Excellent Health
 - **npm** ≥ 9
 - A **Firebase project** with Auth, Firestore, and Storage enabled
 - A **Groq API key** (free tier at [console.groq.com](https://console.groq.com))
+- A **Google OAuth Client ID** (for Gmail sync — enable Gmail API in Google Cloud Console)
 
 ### Setup
 
@@ -531,6 +649,11 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
 VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
 
 VITE_GROQ_API_KEY=gsk_your-groq-api-key
+
+VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+VITE_API_BASE_URL=http://localhost:8000
+VITE_PIPELINE_API_BASE_URL=https://defi-api.stocksuite.app
+VITE_MARKETDATA_BASE=https://yfinance-defi-api.stocksuite.app
 ```
 
 ```bash
@@ -563,7 +686,9 @@ service cloud.firestore {
 | :--- | :--- | :--- |
 | `/login` | Login (email + Google) | No |
 | `/signup` | Sign Up | No |
-| `/onboarding` | 3-step profile setup | Yes |
+| `/forgot-password` | Password Reset | No |
+| `/docs` | Documentation | No |
+| `/onboarding` | 2-step profile setup | Yes |
 | `/` or `/dashboard` | Dashboard (Overview / Budgeting / Wallet tabs) | Yes |
 | `/advisory` | AI Wealth Advisory | Yes |
 | `/privacy` | Privacy Hub | Yes |

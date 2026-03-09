@@ -52,7 +52,7 @@ export default function OnboardingPage() {
   const isLast = step === STEPS.length - 1
 
   function inputClass(extra = '') {
-    return `w-full rounded-xl border border-slate-600 bg-slate-900/60 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition focus:border-teal-500 focus:ring-1 focus:ring-teal-500 ${extra}`
+    return `w-full rounded-xl border border-slate-600 bg-slate-900/60 px-4 py-2.5 text-base text-white placeholder-slate-500 outline-none transition focus:border-teal-500 focus:ring-1 focus:ring-teal-500 ${extra}`
   }
 
   return (

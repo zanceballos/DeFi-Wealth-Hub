@@ -185,16 +185,16 @@ export default function TransactionsTable({
 
       {/* Table */}
       <div className="bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl overflow-hidden">
-        <div className="overflow-auto" style={paginated.length > 0 ? { maxHeight: '600px' } : undefined}>
-          <table className="w-full">
+        <div className="overflow-x-auto" style={paginated.length > 0 ? { maxHeight: '600px' } : undefined}>
+          <table className="min-w-[600px] w-full">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="border-b border-gray-100">
                 <th className="text-left px-5 py-3 text-xs text-gray-400 font-medium">Date</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Description / Merchant</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Category</th>
                 <th className="text-right px-4 py-3 text-xs text-gray-400 font-medium">Amount</th>
-                <th className="text-center px-4 py-3 text-xs text-gray-400 font-medium">Direction</th>
-                <th className="text-center px-4 py-3 text-xs text-gray-400 font-medium">Source</th>
+                <th className="hidden sm:table-cell text-center px-4 py-3 text-xs text-gray-400 font-medium">Direction</th>
+                <th className="hidden md:table-cell text-center px-4 py-3 text-xs text-gray-400 font-medium">Source</th>
                 <th className="text-center px-3 py-3 text-xs text-gray-400 font-medium">Actions</th>
               </tr>
             </thead>
@@ -237,10 +237,10 @@ export default function TransactionsTable({
                             className="w-24 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-teal-400/30"
                           />
                         </td>
-                        <td className="px-4 py-2 text-center text-xs text-gray-500">
+                        <td className="hidden sm:table-cell px-4 py-2 text-center text-xs text-gray-500">
                           {tx.direction}
                         </td>
-                        <td className="px-4 py-2 text-center">
+                        <td className="hidden md:table-cell px-4 py-2 text-center">
                           <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${badge.className}`}>
                             {badge.label}
                           </span>
@@ -281,7 +281,7 @@ export default function TransactionsTable({
                       }`}>
                         {fmtAmt(tx.amount)}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="hidden sm:table-cell px-4 py-3 text-center">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           tx.direction === 'credit'
                             ? 'bg-emerald-100 text-emerald-700'
@@ -290,7 +290,7 @@ export default function TransactionsTable({
                           {tx.direction}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="hidden md:table-cell px-4 py-3 text-center">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${badge.className}`}>
                           {badge.label}
                         </span>

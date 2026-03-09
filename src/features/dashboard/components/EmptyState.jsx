@@ -214,7 +214,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                 type="text"
                                                 value={acc.name}
                                                 onChange={(e) => updateAccount(idx, 'name', e.target.value)}
-                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                 placeholder="e.g. DBS Multiplier"
                                             />
                                         </div>
@@ -224,7 +224,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                 type="text"
                                                 value={acc.type}
                                                 onChange={(e) => updateAccount(idx, 'type', e.target.value)}
-                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                 placeholder="e.g. Savings, Chequing"
                                             />
                                         </div>
@@ -237,7 +237,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                 min="0"
                                                 value={acc.balance}
                                                 onChange={(e) => updateAccount(idx, 'balance', e.target.value)}
-                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -291,7 +291,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                 type="text"
                                                 value={it.asset}
                                                 onChange={(e) => updateInvestmentName(idx, e.target.value)}
-                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                 placeholder="e.g. AAPL, BTC, S&P500 ETF"
                                             />
                                         </div>
@@ -300,7 +300,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                             <select
                                                 value={it.type || 'stocks_etfs'}
                                                 onChange={(e) => updateInvestmentType(idx, e.target.value)}
-                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                             >
                                                 <option value="stocks_etfs">Stocks/ETFs</option>
                                                 <option value="crypto">Cryptocurrency</option>
@@ -318,7 +318,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                         type="date"
                                                         value={lot.date}
                                                         onChange={(e) => updateLot(idx, j, 'date', e.target.value)}
-                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                     />
                                                 </div>
                                                 <div className="flex flex-col">
@@ -330,7 +330,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                         min="0"
                                                         value={lot.quantity}
                                                         onChange={(e) => updateLot(idx, j, 'quantity', e.target.value)}
-                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                         placeholder="0"
                                                     />
                                                 </div>
@@ -343,7 +343,7 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
                                                         min="0"
                                                         value={lot.averageCost}
                                                         onChange={(e) => updateLot(idx, j, 'averageCost', e.target.value)}
-                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
+                                                        className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus:border-brand-primary/50 focus:ring-2 focus:ring-brand-primary/20"
                                                         placeholder="0.00"
                                                     />
                                                 </div>

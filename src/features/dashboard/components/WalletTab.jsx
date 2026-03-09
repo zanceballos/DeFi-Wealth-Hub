@@ -42,7 +42,7 @@ function WalletTab({ walletAllocation, walletRows, totalNetWorth = 0, emptyState
 
   return (
     <div className="space-y-6">
-      <article className={`${CARD_CLASS} p-5`}>
+      <article className={`${CARD_CLASS} p-4 sm:p-5`}>
         <h2 className="mb-4 text-base font-semibold text-slate-900">Portfolio Allocation</h2>
         <div className="grid grid-cols-1 items-center gap-6 md:grid-cols-[300px_1fr]">
           <div className="relative mx-auto h-65 w-65">

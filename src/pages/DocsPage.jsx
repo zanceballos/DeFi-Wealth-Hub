@@ -5,6 +5,7 @@ import {
   Wallet, ShieldCheck, Lock, Building2, Layers, Rocket, Map, Code2,
   ChevronRight, Github, ExternalLink, Menu, X, CheckCircle, GitBranch,
   FileText, PieChart, TrendingUp, Calculator, FlaskConical, Sun, Moon,
+  Mail, BarChart3,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -43,6 +44,7 @@ const TECH_STACK = [
   { layer: "Storage",     tech: "Firebase Storage",        reason: "Secure file uploads with per-user path rules" },
   { layer: "AI Parsing",  tech: "InternVL",                reason: "Vision-language model for extracting structured data from statement PDFs" },
   { layer: "AI Advisory", tech: "Groq (Llama 3.3 70B)",   reason: "Ultra-fast inference, structured JSON output, Singapore-aware financial prompting" },
+  { layer: "Crypto Data", tech: "yfinance (Python)",        reason: "Open-source, no API key — live crypto + stock prices via backend service" },
   { layer: "Charts",      tech: "Recharts 3.7",            reason: "Declarative React charts — PieChart, LineChart, RadarChart" },
   { layer: "Icons",       tech: "Lucide React",            reason: "Consistent, tree-shakeable icon library" },
   { layer: "Routing",     tech: "React Router 7",          reason: "Nested layouts, protected route wrappers, NavLink active states" },
@@ -50,13 +52,14 @@ const TECH_STACK = [
 ];
 
 const ROUTES = [
-  { route: "/login",      page: "Login (email + Google)",           auth: false },
-  { route: "/signup",     page: "Sign Up",                          auth: false },
-  { route: "/onboarding", page: "3-step profile setup",             auth: true  },
-  { route: "/dashboard",  page: "Dashboard (Overview/Budget/Wallet)", auth: true },
-  { route: "/advisory",   page: "AI Wealth Advisory",               auth: true  },
-  { route: "/privacy",    page: "Privacy Hub",                      auth: true  },
-  { route: "/docs",       page: "Documentation",                    auth: false },
+  { route: "/login",           page: "Login (email + Google)",           auth: false },
+  { route: "/signup",          page: "Sign Up",                          auth: false },
+  { route: "/forgot-password", page: "Password Reset",                   auth: false },
+  { route: "/onboarding",      page: "2-step profile setup",             auth: true  },
+  { route: "/dashboard",       page: "Dashboard (Overview/Budget/Wallet)", auth: true },
+  { route: "/advisory",        page: "AI Wealth Advisory",               auth: true  },
+  { route: "/privacy",         page: "Privacy Hub",                      auth: true  },
+  { route: "/docs",            page: "Documentation",                    auth: false },
 ];
 
 // ─── Helper components ────────────────────────────────────────────────────────
@@ -300,7 +303,7 @@ export default function DocsPage() {
                 A privacy-first AI financial cockpit that helps users upload, parse, understand, and act on their financial data across banking, crypto, and investments — without ever sharing passwords or connecting bank accounts.
               </p>
               <div className="flex flex-wrap gap-2">
-                {["React 19", "Vite 7", "Firebase 12", "Tailwind CSS 4", "Groq AI", "InternVL", "Recharts"].map((tag) => (
+                {["React 19", "Vite 7", "Firebase 12", "Tailwind CSS 4", "Groq AI", "InternVL", "yfinance", "Recharts"].map((tag) => (
                   <span key={tag} className={`rounded-full border px-3 py-1 text-xs font-medium ${dk ? "border-white/10 bg-white/5 text-slate-300" : "border-gray-200 bg-gray-100 text-gray-600"}`}>
                     {tag}
                   </span>
@@ -382,8 +385,8 @@ export default function DocsPage() {
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-white/5" : "divide-gray-100"}`}>
                         {[
-                          ["Overview",   "Net worth history chart, overall wellness score, four financial health pillars (Liquidity, Diversification, Risk Match, Digital Health), savings rate, hero stat cards"],
-                          ["Budgeting",  "Category-based spending breakdown with progress bars, inflow vs. outflow analysis, monthly budget tracking, recent transactions with merchant detection"],
+                          ["Overview",   "Net worth history chart, overall wellness score, four financial health pillars, savings rate, hero stat cards, editable monthly income (inline edit with auto-wellness recalc)"],
+                          ["Budgeting",  "Persistent monthly budget, category spending breakdown, emergency savings tracker (6× expenses), transaction exclude/restore, Gmail sync controls, email transaction review (pending/approved/rejected)"],
                           ["Wallet",     "Platform-level asset allocation pie chart, per-platform rows with risk labels (Core / Stable / Growth / Speculative), regulated vs. unregulated exposure"],
                         ].map(([tab, desc]) => (
                           <tr key={tab}>
@@ -478,11 +481,13 @@ export default function DocsPage() {
                     <p className={`mb-2 font-semibold ${heading}`}>💰 Budgeting & Expense Tracking</p>
                     <ul className="space-y-1 text-sm" style={{ color: muted }}>
                       {[
-                        "Category spending — visual progress bars for Food, Transport, Shopping, Entertainment, Utilities, etc.",
-                        "Recent transactions — merchant-tagged list with signed amounts and dates",
-                        "Inflow vs. outflow — monthly cash flow summary derived from statement transactions",
-                        "Emergency fund — savings rate tracking relative to monthly income",
-                        "Merchant detection — auto-recognises Grab, NTUC, Shopee, Netflix, Spotify, and more from raw descriptions",
+                        "Persistent monthly budget — user-set budget saved to Firestore, falls back to monthly_expenses",
+                        "Emergency savings tracker — target = expenses × 6, current = cash-like assets, progress bar",
+                        "Category spending — visual progress bars for Food, Transport, Shopping, Entertainment, etc.",
+                        "Transaction exclude/restore — fingerprint-based, excluded tx hidden from budget calcs",
+                        "Gmail sync controls — link/unlink Gmail, manual sync button, last sync timestamp",
+                        "Email transaction review — pending/approved/rejected tabs with inline edit",
+                        "Merchant detection — auto-recognises Grab, NTUC, Shopee, Netflix, Spotify from descriptions",
                       ].map((item) => (
                         <li key={item} className="flex gap-2">
                           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
@@ -530,8 +535,9 @@ export default function DocsPage() {
                         {[
                           "Firebase Auth — email/password and Google OAuth",
                           "Protected routes — all dashboard pages gated behind auth",
-                          "3-step onboarding — name, income/expenses, risk profile",
-                          "Persistent profile saved to Firestore /users/{uid}",
+                          "2-step onboarding — name, then income/expenses",
+                          "Password reset via /forgot-password page",
+                          "Tab gating — Budgeting & Wallet locked until accounts exist",
                         ].map((item) => (
                           <li key={item} className="flex gap-1.5">
                             <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-500" />
@@ -549,9 +555,12 @@ export default function DocsPage() {
                       <p className={`mb-2 font-semibold ${heading}`}>🔒 Privacy Hub</p>
                       <ul className="space-y-1 text-xs" style={{ color: muted }}>
                         {[
-                          "See exactly which documents were uploaded and from which institutions",
-                          "View what was parsed and what is actively used for analytics",
-                          "Full transparency — no hidden data processing",
+                          "See which documents were uploaded and from which institutions",
+                          "Delete individual statements or all statements at once",
+                          "Delete email transactions by date or all at once",
+                          "Full account reset — delete everything + clear manual accounts",
+                          "Gmail link/unlink — connect or revoke OAuth",
+                          "Auto-recalculate wellness after deletions",
                         ].map((item) => (
                           <li key={item} className="flex gap-1.5">
                             <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-500" />
@@ -565,6 +574,83 @@ export default function DocsPage() {
               </div>
             </section>
 
+            {/* ── Gmail Sync ── */}
+            <section id="gmail-sync" ref={setRef("gmail-sync")}>
+              <SectionTitle icon={Mail} title="Gmail Transaction Sync" dk={dk} />
+              <p className="mb-4 text-sm leading-relaxed" style={{ color: muted }}>
+                Auto-import transaction alert emails from Singapore banks via Google OAuth. Supports{" "}
+                <strong className={heading}>DBS, OCBC, UOB, MariBank, GrabPay, and PayNow</strong>.
+              </p>
+              <CodeBlock>{`User connects Gmail → OAuth token (gmail.readonly)
+      → Query transaction emails (last 7 days)
+      → Parse with emailParser.js
+      → Dedup against existing Firestore docs
+      → Save new tx to /users/{uid}/emailTransactions/{txId}`}</CodeBlock>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {[
+                  { title: "Auto-polling", desc: "Syncs every 5 minutes if OAuth token is valid" },
+                  { title: "Manual sync", desc: "Button on Budgeting tab to trigger immediate sync" },
+                  { title: "Email review", desc: "Pending / Approved / Rejected tabs with inline edit" },
+                  { title: "Deduplication", desc: "Gmail message ID prevents duplicate imports" },
+                  { title: "Bank parsing", desc: "Detects DBS, OCBC, UOB, GrabPay, PayNow, MariBank alerts" },
+                  { title: "Category inference", desc: "Keyword-based mapping to Food, Transport, Shopping, etc." },
+                ].map(({ title, desc }) => (
+                  <Card key={title} className="flex items-start gap-3" dk={dk}>
+                    <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-teal-400" />
+                    <div>
+                      <p className={`text-sm font-semibold ${heading}`}>{title}</p>
+                      <p className="text-xs leading-relaxed" style={{ color: muted }}>{desc}</p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+
+            {/* ── Data Sources ── */}
+            <section id="data-sources" ref={setRef("data-sources")}>
+              <SectionTitle icon={BarChart3} title="Data Sources" dk={dk} />
+              <div className="space-y-4">
+                <Card dk={dk}>
+                  <p className={`mb-2 font-semibold ${heading}`}>📈 Live Crypto & Stock Prices</p>
+                  <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
+                    Real-time price feeds via <strong className={heading}>yfinance</strong> (open-source Python library, no API key required).
+                  </p>
+                  <ul className="space-y-1 text-sm" style={{ color: muted }}>
+                    {[
+                      "Endpoint: {VITE_MARKETDATA_BASE}/price/{ticker}",
+                      "Default API: https://yfinance-defi-api.stocksuite.app",
+                      "In-memory cache with 5-minute TTL",
+                      "Supports any yfinance ticker — crypto, stocks, ETFs",
+                    ].map((item) => (
+                      <li key={item} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+                <Card dk={dk}>
+                  <p className={`mb-2 font-semibold ${heading}`}>📋 Manual Accounts & Investment Lots</p>
+                  <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
+                    First-time users can manually enter financial accounts without uploading statements.
+                  </p>
+                  <ul className="space-y-1 text-sm" style={{ color: muted }}>
+                    {[
+                      "Bank accounts — name, type (Savings/Current), balance",
+                      "Investment positions — asset type (stocks_etfs/crypto) + purchase lots (date, qty, avgCost)",
+                      "Saved to users/{uid}.manual_accounts",
+                      "Auto-triggers recalculateNetWorth() after save",
+                    ].map((item) => (
+                      <li key={item} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </div>
+            </section>
+
             {/* ── Architecture ── */}
             <section id="architecture" ref={setRef("architecture")}>
               <SectionTitle icon={Layers} title="Architecture" dk={dk} />
@@ -574,16 +660,20 @@ export default function DocsPage() {
 ├── data/                # Mock data for development fallbacks
 ├── features/
 │   └── dashboard/
-│       ├── tabs.js      # Tab definitions (Overview, Budgeting, Wallet)
-│       └── components/  # OverviewTab, BudgetingTab, WalletTab, Overlay
-├── hooks/               # useAuth, useAuthContext, useFirestore, useDashboardData
+│       ├── tabs.js      # Tab definitions + gating config
+│       └── components/  # OverviewTab, BudgetingTab, WalletTab, Overlay, EmptyState, EmailTransactionsSection
+├── hooks/               # useAuth, useDashboardData, useEmailTransactions, useGmailLink, usePrivacy, useUser
 ├── lib/                 # Firebase init (auth, db, storage)
-├── pages/               # Dashboard, AdvisoryPage, LoginPage, SignUpPage, OnboardingPage
+├── pages/               # Dashboard, AdvisoryPage, Privacy, DocsPage, LoginPage, SignUpPage, OnboardingPage
 └── services/
     ├── advisoryPayloadBuilder.js     # Firebase → Groq payload mapper
-    ├── dashboardViewModel.js         # Pure data transforms for dashboard tabs
-    ├── financialDataService.js       # Upload, wellness recompute, net worth history
+    ├── dashboardViewModel.js         # Pure data transforms + tx fingerprinting
+    ├── emailParser.js                # Client-side email parser (DBS, OCBC, UOB, etc.)
+    ├── emailTransactionService.js    # Email tx CRUD — approve, reject, edit, delete
+    ├── financialDataService.js       # Upload, wellness recompute, net worth, full reset
+    ├── gmailService.js               # Gmail OAuth + sync — token mgmt, email fetch, dedup
     ├── groqAdvisoryService.js        # Groq API client with fallback + session cache
+    ├── marketDataService.js          # yfinance price API with 5-min cache
     └── statementIngestionService.js  # Statement + transaction subcollection writer`}</CodeBlock>
               <p className={`mt-6 mb-3 font-semibold ${heading}`}>Data Flow</p>
               <CodeBlock>{`User uploads file
@@ -603,7 +693,15 @@ financialDataService ───────▶ Firestore:
 useDashboardData ───────────▶ dashboardViewModel ──▶ React UI
       │
       ▼
-advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ AdvisoryPage UI`}</CodeBlock>
+advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ AdvisoryPage UI
+
+Gmail Sync Flow:
+User links Gmail → OAuth (gmail.readonly) → syncGmailTransactions()
+      → Gmail REST API → emailParser → dedup → /emailTransactions/{txId}
+      → EmailTransactionsSection (Pending/Approve/Reject/Edit)
+
+Market Data Flow:
+marketDataService.getYfPrice(ticker) → yfinance API → 5-min cache → price`}</CodeBlock>
             </section>
 
             {/* ── Firebase Security ── */}
@@ -738,53 +836,33 @@ service firebase.storage {
 ├── name                    (string)   "John Doe"
 ├── monthly_income          (number)   4490
 ├── monthly_expenses        (number)   3458
+├── monthly_budget          (number)   ← user-set persistent budget
 ├── riskProfile             (string)   "moderate"
-├── location                (string)   "Singapore"
+├── onboarding_complete     (boolean)
+├── gmailLinked             (boolean)  ← Gmail OAuth connected
+├── gmailEmail              (string)   ← connected Gmail address
+├── excluded_tx_fingerprints (string[]) ← "date#amt#desc" for exclude/restore
+├── manual_accounts         (map)      ← { accounts[], investments[] }
 │
 ├── /statements/{statementId}
-│   ├── file_name                (string)   "DBS_Mar2026.pdf"
-│   ├── source_type              (string)   "bank"|"crypto"|"broker"|"investment"|"expenses"|"other"
-│   ├── platform                 (string)   "DBS"
-│   ├── status                   (string)   "uploaded"|"parsed"|"approved"
-│   ├── net_worth_contribution   (number)   12500
-│   ├── liquidity_contribution   (number)   12500
-│   ├── transactions_count       (number)   15
-│   ├── parsed_data
-│   │   ├── closing_balance      (number)
-│   │   ├── total_credits        (number)
-│   │   ├── total_debits         (number)
-│   │   ├── statement_month      (string)   "2026-03"
-│   │   └── currency             (string)   "SGD"
-│   ├── asset_class_breakdown
-│   │   └── cash | stocks | crypto | bonds | property | tokenised  (number each)
-│   └── /transactions/{txId}
-│       ├── date        (string)   "2026-03-01"
-│       ├── description (string)   "GRAB TRANSPORT"
-│       ├── amount      (number)   12.50
-│       ├── direction   (string)   "debit" | "credit"
-│       ├── category    (string)   "transport"
-│       ├── merchant    (string)   "Grab"
-│       ├── currency    (string)   "SGD"
-│       └── asset       (string)   "cash"
+│   ├── file_name, source_type, platform, status
+│   ├── net_worth_contribution, liquidity_contribution
+│   ├── parsed_data { closing_balance, total_credits, total_debits, statement_month, currency }
+│   ├── asset_class_breakdown { cash, stocks, crypto, bonds, property, tokenised }
+│   └── /transactions/{txId} { date, description, amount, direction, category, merchant }
+│
+├── /emailTransactions/{txId}            ← Gmail-synced transactions
+│   ├── emailId, source, merchant, date, time, amount, direction
+│   ├── category, status (pending/approved/rejected), deleted, edited
+│   └── createdAt, updatedAt
 │
 ├── /wellness/current
-│   ├── overall_score    (number)
-│   ├── status           (string)   "green"|"amber"|"red"
-│   ├── computed_at      (timestamp)
-│   ├── pillars
-│   │   ├── liquidity        { score, status }
-│   │   ├── diversification  { score, status }
-│   │   ├── risk_match       { score, status }
-│   │   └── digital_health   { score, status }
-│   └── key_metrics
-│       └── net_worth | cash_buffer_months | crypto_pct | digital_pct
-│           unregulated_pct | savings_rate_pct | largest_position_pct
+│   ├── overall_score, status   ("green"|"amber"|"red")
+│   ├── pillars { liquidity, diversification, risk_match, digital_health }
+│   └── key_metrics { net_worth, cash_buffer_months, crypto_pct, ... }
 │
 └── /history/net_worth/items/{monthKey}
-    ├── month        (string)   "Mar 2026"
-    ├── month_key    (string)   "2026-03"
-    ├── value        (number)
-    └── updated_at   (timestamp)`}</CodeBlock>
+    ├── month, month_key, value, updated_at`}</CodeBlock>
             </section>
 
             {/* ── Aggregation & Metrics ── */}
@@ -1024,8 +1102,9 @@ savingsRatePct     = (4,490 − 3,458) / 4,490 × 100 = 22.98%`}</CodeBlock>
             <section id="getting-started" ref={setRef("getting-started")}>
               <SectionTitle icon={Rocket} title="Getting Started" dk={dk} />
               <p className="mb-4 text-sm" style={{ color: muted }}>
-                Prerequisites: Node.js ≥ 18, npm ≥ 9, a Firebase project with Auth + Firestore + Storage enabled, and a Groq API key (free tier at{" "}
-                <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-teal-500 hover:underline">console.groq.com</a>).
+                Prerequisites: Node.js ≥ 18, npm ≥ 9, a Firebase project with Auth + Firestore + Storage enabled, a Groq API key (free tier at{" "}
+                <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-teal-500 hover:underline">console.groq.com</a>),
+                and a Google OAuth Client ID for Gmail sync.
               </p>
               <CodeBlock>{`# Clone the repository
 git clone https://github.com/nicolotan/DeFi-Wealth-Hub.git
@@ -1044,7 +1123,12 @@ VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
 VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
 
-VITE_GROQ_API_KEY=gsk_your-groq-api-key`}</CodeBlock>
+VITE_GROQ_API_KEY=gsk_your-groq-api-key
+
+VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+VITE_API_BASE_URL=http://localhost:8000
+VITE_PIPELINE_API_BASE_URL=https://defi-api.stocksuite.app
+VITE_MARKETDATA_BASE=https://yfinance-defi-api.stocksuite.app`}</CodeBlock>
               <p className={`mt-5 mb-2 font-semibold text-sm ${heading}`}>Start dev server</p>
               <CodeBlock>{`npm run dev\n# → http://localhost:5173`}</CodeBlock>
               <p className={`mt-5 mb-2 font-semibold text-sm ${heading}`}>Firestore Security Rules</p>

@@ -1,7 +1,25 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
-import { getStorage } from 'firebase/storage'
+import { getAuth }       from 'firebase/auth'
+import { getFirestore }  from 'firebase/firestore'
+import { getStorage }    from 'firebase/storage'
+
+// ─── Guard: fail loudly if required env vars are missing ────────────────────
+const REQUIRED = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+]
+
+if (import.meta.env.VITE_APP_ENV === 'development') {
+  REQUIRED.forEach((key) => {
+    if (!import.meta.env[key]) {
+      console.error(`[firebase] Missing env var: ${key}`)
+    }
+  })
+}
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,8 +30,7 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-const app = initializeApp(firebaseConfig)
-
+const app     = initializeApp(firebaseConfig)
 export const auth    = getAuth(app)
 export const db      = getFirestore(app)
 export const storage = getStorage(app)
