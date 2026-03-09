@@ -320,7 +320,19 @@ export default function useDashboardData() {
             value:   fmtCurrency(v),
             percent: grandTotal > 0 ? Math.round((v / grandTotal) * 100) : 0,
           }))
-        if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
+        if (breakdown.length > 0) {
+          setNetWorthBreakdown((prev = []) => {
+            const nextByLabel = new Map(breakdown.map((i) => [i.label, i]))
+            const result = Array.isArray(prev)
+              ? prev.map((it) => nextByLabel.get(it.label) ?? it)
+              : []
+            const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
+            for (const item of breakdown) {
+              if (!prevLabels.has(item.label)) result.push(item)
+            }
+            return result
+          })
+        }
       }
 
       // ── Manual data asset breakdown (cash from user manual_accounts) ──
@@ -397,7 +409,17 @@ export default function useDashboardData() {
             percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
           }))
 
-        setNetWorthBreakdown(breakdown2)
+        setNetWorthBreakdown((prev = []) => {
+          const nextByLabel = new Map(breakdown2.map((i) => [i.label, i]))
+          const result = Array.isArray(prev)
+            ? prev.map((it) => nextByLabel.get(it.label) ?? it)
+            : []
+          const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
+          for (const item of breakdown2) {
+            if (!prevLabels.has(item.label)) result.push(item)
+          }
+          return result
+        })
       }
 
       // Net worth time series
@@ -469,7 +491,9 @@ export default function useDashboardData() {
   }, [raw.profile])
 
   // Helper: rebuild net worth breakdown combining statements + manual cash + provided live valuations
-  const rebuildBreakdown = useCallback(({ liveStocksValue = null, liveCryptoValue = null } = {}) => {
+  // Accepts an overrides object where you can pass per-asset-class live values, e.g. { stocks: number, crypto: number }
+  // Backward compatible: also accepts { liveStocksValue, liveCryptoValue } keys.
+  const rebuildBreakdown = useCallback((overrides = {}) => {
     const activeStmts = Array.isArray(raw.statements)
       ? raw.statements.filter((s) => s.status === 'parsed' || s.status === 'approved')
       : []
@@ -491,17 +515,27 @@ export default function useDashboardData() {
       grand += manualHoldings.manualCash
     }
 
-    // Stocks & crypto: prefer live valuations if provided, otherwise keep existing statement totals only
-    if (liveStocksValue != null && liveStocksValue > 0) {
-      // Replace or augment stocks bucket: we add live value on top of statements
-      totals.stocks += liveStocksValue
-      grand += liveStocksValue
+    // Apply per-key live valuations if provided
+    const addByKey = {}
+    // New interface: direct keys like { stocks, crypto }
+    for (const k of Object.keys(totals)) {
+      const v = overrides?.[k]
+      if (Number.isFinite(v) && v > 0) addByKey[k] = Number(v)
     }
-    if (liveCryptoValue != null && liveCryptoValue > 0) {
-      totals.crypto += liveCryptoValue
-      grand += liveCryptoValue
+    // Backward compatibility with { liveStocksValue, liveCryptoValue }
+    if (overrides?.liveStocksValue != null && overrides.liveStocksValue > 0) {
+      addByKey.stocks = (addByKey.stocks || 0) + Number(overrides.liveStocksValue)
+    }
+    if (overrides?.liveCryptoValue != null && overrides.liveCryptoValue > 0) {
+      addByKey.crypto = (addByKey.crypto || 0) + Number(overrides.liveCryptoValue)
     }
 
+    for (const [k, v] of Object.entries(addByKey)) {
+      if (k in totals) {
+        totals[k] += v
+        grand += v
+      }
+    }
     const breakdown = Object.entries(totals)
       .filter(([, v]) => v > 0)
       .map(([key, v]) => ({
@@ -510,8 +544,19 @@ export default function useDashboardData() {
         value:   fmtCurrency(v),
         percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
       }))
-
-    if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
+    if (breakdown.length > 0) {
+      setNetWorthBreakdown((prev = []) => {
+        const nextByLabel = new Map(breakdown.map((i) => [i.label, i]))
+        const result = Array.isArray(prev)
+          ? prev.map((it) => nextByLabel.get(it.label) ?? it)
+          : []
+        const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
+        for (const item of breakdown) {
+          if (!prevLabels.has(item.label)) result.push(item)
+        }
+        return result
+      })
+    }
   }, [raw.statements, manualHoldings])
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -532,29 +577,27 @@ export default function useDashboardData() {
 
     async function runOnce() {
       // Fetch all stock symbols; daily cadence so burst should be acceptable if list is small
-      const prices = await Promise.all(symbols.map((s) => getYfPrice(s, { ttlMs: 24 * 60 * 60 * 1000 })))
+      const [fxSgdUsd, ...prices] = await Promise.all([
+        // Yahoo-style pair: 1 SGD = X USD → convert USD → SGD by dividing by this FX
+        getYfPrice('SGDUSD=X', { ttlMs: 60 * 60 * 1000 }),
+        ...symbols.map((s) => getYfPrice(s, { ttlMs: 24 * 60 * 60 * 1000 })),
+      ])
       if (cancelled) return
 
-      // Persist and compute valuation
+      const fx = Number(fxSgdUsd)
+      const fxValid = Number.isFinite(fx) && fx > 0
+
+      // Persist and compute valuation in SGD
       let liveStocksValue = 0
       await Promise.all(symbols.map(async (s, i) => {
-        const price = Number(prices[i])
-        if (!Number.isFinite(price) || price <= 0) return
+        const priceUsd = Number(prices[i])
+        if (!Number.isFinite(priceUsd) || priceUsd <= 0) return
+        const priceSgd = fxValid ? priceUsd / fx : priceUsd // fallback: treat as SGD if FX missing
         const qty = manualHoldings.stocks.get(s) || 0
-        liveStocksValue += qty * price
-        try {
-          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
-            symbol: s,
-            price,
-            source: 'yfinance-defi',
-            updatedAt: serverTimestamp(),
-          }, { merge: true })
-        } catch (e) {
-          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
-        }
+        liveStocksValue += qty * priceSgd
       }))
 
-      rebuildBreakdown({ liveStocksValue })
+      rebuildBreakdown({ stocks: liveStocksValue })
     }
 
     runOnce()
@@ -570,33 +613,29 @@ export default function useDashboardData() {
     if (!uid) return
     const symbols = Array.from(manualHoldings.crypto.keys())
     if (symbols.length === 0) return
-
     let cancelled = false
 
     async function runOnce() {
       // yfinance-defi expects crypto pairs like BTC-USD; append "-USD" if not already present
       const pairSymbols = symbols.map((s) => (s.includes('-') ? s : `${s}-USD`))
-      const prices = await Promise.all(pairSymbols.map((ps) => getYfPrice(ps, { ttlMs: 60 * 60 * 1000 })))
+      const [fxSgdUsd, ...prices] = await Promise.all([
+        getYfPrice('SGDUSD=X', { ttlMs: 60 * 60 * 1000 }),
+        ...pairSymbols.map((ps) => getYfPrice(ps, { ttlMs: 60 * 60 * 1000 })),
+      ])
       if (cancelled) return
+      const fx = Number(fxSgdUsd)
+      const fxValid = Number.isFinite(fx) && fx > 0
+
       let liveCryptoValue = 0
       await Promise.all(symbols.map(async (s, i) => {
-        const price = Number(prices[i])
-        if (!Number.isFinite(price) || price <= 0) return
+        const priceUsd = Number(prices[i])
+        if (!Number.isFinite(priceUsd) || priceUsd <= 0) return
+        const priceSgd = fxValid ? priceUsd / fx : priceUsd
         const qty = manualHoldings.crypto.get(s) || 0
-        liveCryptoValue += qty * price
-        try {
-          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
-            symbol: s,
-            price,
-            source: 'yfinance-defi',
-            updatedAt: serverTimestamp(),
-          }, { merge: true })
-        } catch (e) {
-          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
-        }
+        liveCryptoValue += qty * priceSgd
       }))
-
-      rebuildBreakdown({ liveCryptoValue })
+        console.log('liveCryptoValue', liveCryptoValue)
+      rebuildBreakdown({ crypto: liveCryptoValue })
     }
 
     runOnce()
