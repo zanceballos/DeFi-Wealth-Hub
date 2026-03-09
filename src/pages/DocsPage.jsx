@@ -36,6 +36,7 @@ const NAV_SECTIONS = [
   { id: "our-solution", label: "Our Solution", icon: CheckCircle },
   { id: "features", label: "Features", icon: Sparkles },
   { id: "architecture", label: "Architecture", icon: Layers },
+  { id: "firebase-security", label: "Firebase", icon: ShieldCheck },
   { id: "data-model", label: "Data Model", icon: Building2 },
   { id: "aggregation", label: "Aggregation & Metrics", icon: Calculator },
   { id: "scoring", label: "Scoring Formulas", icon: Brain },
@@ -814,6 +815,294 @@ useDashboardData ───────────▶ dashboardViewModel ──�
       │
       ▼
 advisoryPayloadBuilder ─────▶ groqAdvisoryService ──▶ AdvisoryPage UI`}</CodeBlock>
+            </section>
+
+            {/* ── Firebase Security ── */}
+            <section id="firebase-security" ref={setRef("firebase-security")}>
+              <SectionTitle icon={ShieldCheck} title="Firebase Security" />
+
+              <p
+                className="mb-6 text-sm leading-relaxed"
+                style={{ color: "#8899AA" }}
+              >
+                All user data — transactions, wellness scores, statements, and
+                profile — lives exclusively in Firebase. We chose Firebase not
+                just for developer convenience, but because it provides{" "}
+                <strong className="text-white">
+                  enterprise-grade security guarantees
+                </strong>{" "}
+                that are enforced at the infrastructure level, independent of
+                our application code.
+              </p>
+
+              {/* Why Firebase */}
+              <p className="mb-3 text-sm font-bold text-white">Why Firebase?</p>
+              <div className="mb-6 grid gap-3 sm:grid-cols-2">
+                {[
+                  {
+                    icon: ShieldCheck,
+                    title: "No server required",
+                    desc: "There is no backend server holding your data. Firebase's client SDKs talk directly to Google's infrastructure — reducing the attack surface to near-zero.",
+                    color: "#00C9B1",
+                  },
+                  {
+                    icon: Lock,
+                    title: "Auth-gated by default",
+                    desc: "Every Firestore read and write is evaluated against Security Rules before execution. Unauthenticated requests are rejected at the edge.",
+                    color: "#0099FF",
+                  },
+                  {
+                    icon: Building2,
+                    title: "Google Cloud infrastructure",
+                    desc: "Firebase runs on Google Cloud Platform — the same infrastructure used by Google Search, Gmail, and YouTube. It inherits ISO 27001, SOC 1/2/3, and PCI DSS compliance.",
+                    color: "#A78BFA",
+                  },
+                  {
+                    icon: Layers,
+                    title: "Real-time + serverless",
+                    desc: "Firestore is a serverless NoSQL document database. There are no VMs, no patches to apply, and no infrastructure to mis-configure — Google manages all of that.",
+                    color: "#34D399",
+                  },
+                ].map(({ icon: Icon, title, desc, color }) => (
+                  <Card key={title} className="flex items-start gap-3">
+                    <div
+                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                      style={{ background: `${color}15` }}
+                    >
+                      <Icon className="h-4 w-4" style={{ color }} />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-sm font-semibold text-white">
+                        {title}
+                      </p>
+                      <p
+                        className="text-xs leading-relaxed"
+                        style={{ color: "#8899AA" }}
+                      >
+                        {desc}
+                      </p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Encryption */}
+              <p className="mb-3 text-sm font-bold text-white">Encryption</p>
+              <Card className="mb-6">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {[
+                    {
+                      label: "In Transit",
+                      value: "TLS 1.3",
+                      detail:
+                        "All data between your browser and Firebase is encrypted with TLS 1.3 — the same standard used by online banking.",
+                      color: "#00C9B1",
+                    },
+                    {
+                      label: "At Rest",
+                      value: "AES-256",
+                      detail:
+                        "Firestore and Firebase Storage encrypt all stored data using AES-256 — the encryption standard used by governments and financial institutions worldwide.",
+                      color: "#0099FF",
+                    },
+                    {
+                      label: "Auth Tokens",
+                      value: "RS256 JWT",
+                      detail:
+                        "Firebase Auth issues RS256-signed JSON Web Tokens. Every Firestore request carries this token and is verified server-side before execution.",
+                      color: "#A78BFA",
+                    },
+                  ].map(({ label, value, detail, color }) => (
+                    <div
+                      key={label}
+                      className="rounded-xl p-4 text-center"
+                      style={{
+                        background: `${color}08`,
+                        border: `1px solid ${color}20`,
+                      }}
+                    >
+                      <p
+                        className="mb-1 text-xs font-semibold uppercase tracking-widest"
+                        style={{ color: "#8899AA" }}
+                      >
+                        {label}
+                      </p>
+                      <p className="mb-2 text-2xl font-black" style={{ color }}>
+                        {value}
+                      </p>
+                      <p
+                        className="text-xs leading-relaxed"
+                        style={{ color: "#8899AA" }}
+                      >
+                        {detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Security Rules visual flow */}
+              <p className="mb-3 text-sm font-bold text-white">
+                How Security Rules Protect Your Data
+              </p>
+              <div className="mb-4 flex flex-col gap-0">
+                {[
+                  {
+                    actor: "Any Request",
+                    check: "Is the user authenticated via Firebase Auth?",
+                    pass: "Yes → continue",
+                    fail: "No → 403 Denied immediately",
+                    color: "#F59E0B",
+                  },
+                  {
+                    actor: "Authenticated User",
+                    check:
+                      "Does request.auth.uid match the {uid} in the document path?",
+                    pass: "Yes → allow read/write",
+                    fail: "No → 403 Denied — cannot access another user's data",
+                    color: "#00C9B1",
+                  },
+                  {
+                    actor: "Matched User",
+                    check: "Does the path fall under /users/{uid}/**?",
+                    pass: "Yes → full read/write on own subtree only",
+                    fail: "No matching rule → implicitly denied",
+                    color: "#0099FF",
+                  },
+                ].map(({ actor, check, pass, fail, color }, i, arr) => (
+                  <div key={actor} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                        style={{
+                          background: `${color}15`,
+                          border: `1.5px solid ${color}30`,
+                          color,
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                      {i < arr.length - 1 && (
+                        <div
+                          className="w-px flex-1 my-1"
+                          style={{
+                            background: `linear-gradient(to bottom, ${color}30, transparent)`,
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div
+                      className="mb-3 flex-1 rounded-2xl p-4"
+                      style={{
+                        background: `${color}08`,
+                        border: `1px solid ${color}20`,
+                      }}
+                    >
+                      <p
+                        className="mb-1 text-[11px] font-semibold uppercase tracking-wide"
+                        style={{ color }}
+                      >
+                        {actor}
+                      </p>
+                      <p className="mb-2 text-sm font-medium text-white">
+                        {check}
+                      </p>
+                      <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
+                        <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                          {pass}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs text-red-400">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400" />
+                          {fail}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actual rules code */}
+              <p className="mb-2 text-sm font-bold text-white">
+                Firestore Security Rules
+              </p>
+              <CodeBlock>{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Only the authenticated owner can read or write their own data.
+    // This covers ALL subcollections: statements, transactions,
+    // wellness scores, net worth history, and profile.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // All other paths are implicitly denied.
+    // No other user, admin, or anonymous caller can access your data.
+  }
+}`}</CodeBlock>
+
+              {/* Storage rules */}
+              <p className="mt-5 mb-2 text-sm font-bold text-white">
+                Firebase Storage Rules
+              </p>
+              <CodeBlock>{`rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Statement files are stored at /users/{uid}/statements/{filename}
+    // Only the file owner can upload, download, or delete.
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+  }
+}`}</CodeBlock>
+
+              {/* What this means for users */}
+              <p className="mt-6 mb-3 text-sm font-bold text-white">
+                What This Means for You
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  {
+                    emoji: "🔒",
+                    title: "Zero cross-user access",
+                    desc: "No user can read, write, or even discover another user's documents — not even team members with Firestore Console access (unless they have your UID).",
+                  },
+                  {
+                    emoji: "🚫",
+                    title: "No credential sharing",
+                    desc: "You never connect your bank account. You upload exported statements yourself — your banking login is never involved.",
+                  },
+                  {
+                    emoji: "🛡️",
+                    title: "Rules enforced server-side",
+                    desc: "Security Rules are evaluated on Google's servers, not in your browser. Bypassing them via client-side code is architecturally impossible.",
+                  },
+                  {
+                    emoji: "🗑️",
+                    title: "Right to delete",
+                    desc: "The Privacy Hub lets you see every uploaded document. Deleting your account removes your entire /users/{uid} subtree from Firestore.",
+                  },
+                ].map(({ emoji, title, desc }) => (
+                  <Card key={title} className="flex items-start gap-3">
+                    <span className="mt-0.5 text-xl">{emoji}</span>
+                    <div>
+                      <p className="mb-1 text-sm font-semibold text-white">
+                        {title}
+                      </p>
+                      <p
+                        className="text-xs leading-relaxed"
+                        style={{ color: "#8899AA" }}
+                      >
+                        {desc}
+                      </p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </section>
 
             {/* ── Data Model ── */}

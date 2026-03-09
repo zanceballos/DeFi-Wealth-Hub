@@ -1330,7 +1330,7 @@ export default function Overlay({
         <div className="flex min-h-full items-start justify-center px-4 py-6">
           <div
             className="w-full max-w-6xl rounded-2xl bg-white shadow-2xl overflow-hidden"
-            style={{ border: "1px solid #E5EAF2" }}
+            
           >
             {/* ── Toast ── */}
             {toast && (
@@ -1628,7 +1628,7 @@ export default function Overlay({
                     ) : (
                       <Save className="h-3.5 w-3.5" />
                     )}
-                    {isSavingToFirebase ? "Saving…" : "Save to Firebase"}
+                    {isSavingToFirebase ? "Saving…" : "Confirm & Save"}
                   </button>
                 </div>
               </div>
