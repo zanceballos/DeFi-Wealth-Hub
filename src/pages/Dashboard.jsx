@@ -9,6 +9,7 @@ import useDashboardData from "../hooks/useDashboardData.js";
 export default function Dashboard() {
     const [activeTab, setActiveTab] = useState('overview')
     const [overlayOpen, setOverlayOpen] = useState(false)
+    // Local override to immediately flip empty state after onboarding finish
     const {
         loading,
         isEmpty,
@@ -25,6 +26,12 @@ export default function Dashboard() {
 
     const openOverlay = useCallback(() => setOverlayOpen(true), [])
     const closeOverlay = useCallback(() => setOverlayOpen(false), [])
+
+    const handleOnboardingFinished = useCallback(() => {
+        // Immediately allow rendering of the full Overview tab
+        // Refresh from Firestore to persist the change in derived state
+        try { refresh() } catch {}
+    }, [refresh])
 
     const todayLabel = new Intl.DateTimeFormat('en-SG', {
         weekday: 'long',
@@ -76,6 +83,7 @@ export default function Dashboard() {
                         todayLabel={todayLabel}
                         isEmpty={isEmpty}
                         onUploadClick={openOverlay}
+                        onFinished={handleOnboardingFinished}
                     />
                 ) : activeTab === 'budgeting' ? (
                     <BudgetingTab viewModel={budgetViewModel} onUploadClick={openOverlay} />
