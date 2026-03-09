@@ -40,7 +40,6 @@ function OverviewTab({
     onUploadClick,
     onFinished,
 }) {
-    console.log(isEmpty);
     if (isEmpty) {
         return (
             <EmptyState
