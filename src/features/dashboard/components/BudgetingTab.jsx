@@ -441,33 +441,29 @@ export default function BudgetingTab({
         )}
       </div>
 
-      {/* ── Summary stat cards — horizontal scroll on mobile ── */}
-      <div className="overflow-x-auto pb-1 -mx-1 px-1">
-        <div className="flex gap-4 sm:grid sm:grid-cols-3 min-w-[480px] sm:min-w-0">
-          <div className="flex-1">
-            <StatCard
-              title="Total Transactions"
-              value={liveSummary.totalCount}
-              valueColor="text-teal-500"
-              tooltip="Count of all debit and credit entries from statements and email imports."
-            />
-          </div>
-          <div className="flex-1">
-            <StatCard
-              title="Total Inflow"
-              value={liveSummary.totalInflow}
-              valueColor="text-teal-500"
-              tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds."
-            />
-          </div>
-          <div className="flex-1">
-            <StatCard
-              title="Total Outflow"
-              value={liveSummary.totalOutflow}
-              valueColor="text-teal-500"
-              tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out."
-            />
-          </div>
+      {/* ── Summary stat cards — NO overflow-x-auto, isolate tooltip context ── */}
+      {/* ⚠️ overflow-x-auto clips fixed-position tooltips — use scroll wrapper only on the  */}
+      {/* inner div, and ensure StatCard's tooltip uses position:fixed via InfoTooltip       */}
+      <div className="-mx-1 px-1">
+        <div className="grid grid-cols-3 gap-4 min-w-0">
+          <StatCard
+            title="Total Transactions"
+            value={liveSummary.totalCount}
+            valueColor="text-teal-500"
+            tooltip="Count of all debit and credit entries from statements and email imports."
+          />
+          <StatCard
+            title="Total Inflow"
+            value={liveSummary.totalInflow}
+            valueColor="text-teal-500"
+            tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds."
+          />
+          <StatCard
+            title="Total Outflow"
+            value={liveSummary.totalOutflow}
+            valueColor="text-teal-500"
+            tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out."
+          />
         </div>
       </div>
 
