@@ -15,7 +15,8 @@ import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import {AppProvider} from "./context/AppContext.jsx";
 import Privacy from "./pages/Privacy.jsx";
-
+import ForgotPasswordPage from "./pages/ForgetPasswordPage.jsx";
+import DocsPage from './pages/DocsPage.jsx'
 createRoot(document.getElementById('root')).render(
     <StrictMode>
         <BrowserRouter>
@@ -25,7 +26,8 @@ createRoot(document.getElementById('root')).render(
                         {/* Public routes */}
                         <Route path="/login" element={<LoginPage/>}/>
                         <Route path="/signup" element={<SignUpPage/>}/>
-
+                        <Route path="/forgot-password" element={<ForgotPasswordPage/>}/>
+                        <Route path="/docs" element={<DocsPage/>}/>
                         {/* Protected routes */}
                         <Route element={<ProtectedRoute/>}>
                             <Route path="/onboarding" element={<OnboardingPage/>}/>
