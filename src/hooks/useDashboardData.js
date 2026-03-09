@@ -20,7 +20,7 @@
  *   }
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db } from '../lib/firebase.js'
 import {
   collection,
@@ -30,6 +30,8 @@ import {
   orderBy,
   query,
   limit,
+  setDoc,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { useAuthContext } from './useAuthContext.js'
 import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
@@ -39,6 +41,9 @@ import {
   buildBudgetViewModel,
   safeNumber,
 } from '../services/dashboardViewModel.js'
+
+// Live market data (Alpha Vantage)
+import { getStockPrice, makeSymbolRotator } from '../services/marketDataService.js'
 
 // ── Mock fallback data (original static constants) ──
 import { HERO_STATS as MOCK_HERO } from '../data/mockHero.js'
@@ -235,7 +240,13 @@ export default function useDashboardData() {
       setRaw({ profile, statements, wellness, netWorthHistory: historyItems })
 
       // ── Detect empty state ────────────────────────────────────────────
-      const hasData = !!wellness || activeStmts.length > 0 || historyItems.length > 0
+      // Also consider manual_accounts saved on the user document
+      const manual = profile?.manual_accounts
+      const hasManual = (
+        (Array.isArray(manual?.accounts) && manual.accounts.length > 0) ||
+        (Array.isArray(manual?.investments) && manual.investments.length > 0)
+      )
+      const hasData = hasManual || !!wellness || activeStmts.length > 0 || historyItems.length > 0
       setIsEmpty(!hasData)
 
       // ════════════════════════════════════════════════════════════════════
@@ -314,6 +325,83 @@ export default function useDashboardData() {
         if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
       }
 
+      // ── Manual data asset breakdown (cash from user manual_accounts) ──
+      // Start: line 322 onwards as requested
+      const manualAccounts = profile?.manual_accounts?.accounts
+      const manualInvestments = profile?.manual_accounts?.investments
+
+      // Aggregate manual cash from accounts (if present)
+      const manualCash = Array.isArray(manualAccounts)
+        ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+        : 0
+
+      // Aggregate manual investments into stocks and crypto buckets (sum of lots: quantity * averageCost)
+      let manualStocks = 0
+      let manualCrypto = 0
+      if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
+        for (const inv of manualInvestments) {
+          const lots = Array.isArray(inv?.lots) ? inv.lots : []
+          const assetTotal = lots.reduce((sum, lot) => {
+            const qty = safeNumber(lot?.quantity)
+            const avg = safeNumber(lot?.averageCost)
+            const val = qty * avg
+            return sum + (Number.isFinite(val) ? val : 0)
+          }, 0)
+
+          // normalise type to buckets
+          const t = (inv?.type || '').toLowerCase()
+          if (t === 'crypto') {
+            manualCrypto += assetTotal
+          } else if (t === 'stocks_etfs' || t === 'stocks_etf' || t === 'stock_etf' || t === 'stocks' ) {
+            manualStocks += assetTotal
+          } else {
+            // default unknown types to stocks bucket to avoid losing value
+            manualStocks += assetTotal
+          }
+        }
+      }
+
+      // If we have any manual totals (cash/stocks/crypto), recalc totals including them and recompute percentages
+      if (manualCash > 0 || manualStocks > 0 || manualCrypto > 0) {
+        const totals2 = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
+        let grandTotal2 = 0
+
+        // Include statement-based totals (same logic as above)
+        for (const stmt of activeStmts) {
+          const bd = stmt.asset_class_breakdown ?? {}
+          for (const key of Object.keys(totals2)) {
+            const v = safeNumber(bd[key])
+            totals2[key] += v
+            grandTotal2 += v
+          }
+        }
+
+        // Add manual figures on top of statement totals
+        if (manualCash > 0) {
+          totals2.cash += manualCash
+          grandTotal2 += manualCash
+        }
+        if (manualStocks > 0) {
+          totals2.stocks += manualStocks
+          grandTotal2 += manualStocks
+        }
+        if (manualCrypto > 0) {
+          totals2.crypto += manualCrypto
+          grandTotal2 += manualCrypto
+        }
+
+        const breakdown2 = Object.entries(totals2)
+          .filter(([, v]) => v > 0)
+          .map(([key, v]) => ({
+            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
+            label:   BREAKDOWN_LABELS[key] ?? key,
+            value:   fmtCurrency(v),
+            percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
+          }))
+
+        setNetWorthBreakdown(breakdown2)
+      }
+
       // Net worth time series
       if (historyItems.length > 0) {
         setNetWorthSeries(
@@ -345,6 +433,165 @@ export default function useDashboardData() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Live stock price updates (Alpha Vantage) — every ~30 seconds
+  // - Computes live market value for manual stock investments (sum(lots.quantity) × latestPrice)
+  // - Rebuilds Overview breakdown combining statement totals + manual cash + manual crypto (cost basis) + live stocks
+  // - Skips if no API key or no stock investments; cleans up interval on unmount.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const symbolRotatorRef = useRef(null)
+  const priceCacheRef = useRef(new Map()) // symbol -> last price number
+
+  // Precompute manual figures and base statement totals whenever raw changes
+  const liveInputs = useMemo(() => {
+    const profile = raw.profile || {}
+    const manualAccounts = profile?.manual_accounts?.accounts
+    const manualInvestments = profile?.manual_accounts?.investments
+
+    const manualCash = Array.isArray(manualAccounts)
+      ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+      : 0
+
+    // Statement totals baseline
+    const totalsBase = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
+    let grandBase = 0
+    const activeStmts = (raw.statements || []).filter(
+      (s) => s.status === 'parsed' || s.status === 'approved',
+    )
+    for (const stmt of activeStmts) {
+      const bd = stmt.asset_class_breakdown ?? {}
+      for (const key of Object.keys(totalsBase)) {
+        const v = safeNumber(bd[key])
+        totalsBase[key] += v
+        grandBase += v
+      }
+    }
+
+    // Build stocks aggregation + symbols list, and crypto total (cost basis)
+    let manualStocksByAsset = new Map() // asset -> totalQuantity across lots
+    let manualCrypto = 0
+    let stockSymbols = []
+    if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
+      for (const inv of manualInvestments) {
+        const lots = Array.isArray(inv?.lots) ? inv.lots : []
+        const t = (inv?.type || '').toLowerCase()
+        const qtySum = lots.reduce((sum, lot) => sum + safeNumber(lot?.quantity), 0)
+        if (!qtySum) continue
+
+        if (t === 'crypto') {
+          // For crypto we keep cost basis only (no API provided here)
+          const cost = lots.reduce((sum, lot) => sum + safeNumber(lot?.quantity) * safeNumber(lot?.averageCost), 0)
+          manualCrypto += cost
+        } else {
+          const asset = (inv?.asset || '').trim().toUpperCase()
+          if (asset) {
+            manualStocksByAsset.set(asset, (manualStocksByAsset.get(asset) || 0) + qtySum)
+            stockSymbols.push(asset)
+          }
+        }
+      }
+    }
+
+    // Unique symbols
+    stockSymbols = Array.from(new Set(stockSymbols))
+
+    return { totalsBase, manualCash, manualCrypto, manualStocksByAsset, stockSymbols }
+  }, [raw])
+
+  useEffect(() => {
+    const { stockSymbols } = liveInputs
+    // If no stocks to update, do nothing
+    if (!stockSymbols || stockSymbols.length === 0) return
+
+    // Initialize or refresh rotator with current symbols
+    symbolRotatorRef.current = makeSymbolRotator(stockSymbols)
+
+    let isCancelled = false
+
+    const tick = async () => {
+      if (isCancelled) return
+      const nextSymbol = symbolRotatorRef.current ? symbolRotatorRef.current() : null
+      if (!nextSymbol) return
+      const price = await getStockPrice(nextSymbol, { ttlMs: 60_000 })
+      if (Number.isFinite(price)) {
+        priceCacheRef.current.set(nextSymbol, price)
+
+        // Persist latest quote to Firestore for auditing/other consumers
+        // Do not block UI on failures
+        if (uid) {
+          try {
+            const quoteRef = doc(db, 'users', uid, 'live_quotes', nextSymbol)
+            await setDoc(
+              quoteRef,
+              {
+                price,
+                updatedAt: serverTimestamp?.() || new Date(),
+                source: 'alphavantage',
+                symbol: nextSymbol,
+              },
+              { merge: true },
+            )
+          } catch (e) {
+            if (import.meta?.env?.MODE !== 'production') {
+              console.warn('Failed to persist live quote for', nextSymbol, e)
+            }
+          }
+        }
+        // Rebuild breakdown with latest prices
+        const { totalsBase, manualCash, manualCrypto, manualStocksByAsset } = liveInputs
+
+        // Compute live stocks market value
+        let liveStocksTotal = 0
+        for (const [asset, qty] of manualStocksByAsset.entries()) {
+          const p = priceCacheRef.current.get(asset)
+          if (Number.isFinite(p)) {
+            liveStocksTotal += qty * p
+          }
+        }
+
+        // If we have at least one priced stock or any manual values, update breakdown
+        const hasManualValues = manualCash > 0 || manualCrypto > 0 || manualStocksByAsset.size > 0
+        if (!hasManualValues) return
+
+        const totals = { ...totalsBase }
+        if (manualCash > 0) totals.cash += manualCash
+        if (manualCrypto > 0) totals.crypto += manualCrypto
+
+        // For stocks, prefer live value if available; else leave base statement value
+        if (liveStocksTotal > 0) {
+          // Replace statement-based stocks share with live manual stocks on top of it
+          totals.stocks += liveStocksTotal
+        } else {
+          // If no prices yet, approximate using cost basis of manual stocks (handled earlier in fetchData)
+          // Do nothing here to avoid double-counting; initial breakdown already includes cost basis.
+        }
+
+        const grand = Object.values(totals).reduce((a, b) => a + b, 0)
+        const nextBreakdown = Object.entries(totals)
+          .filter(([, v]) => v > 0)
+          .map(([key, v]) => ({
+            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
+            label:   BREAKDOWN_LABELS[key] ?? key,
+            value:   fmtCurrency(v),
+            percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
+          }))
+
+        // Update state
+        setNetWorthBreakdown(nextBreakdown)
+      }
+    }
+
+    // Run every 30 seconds; also trigger an immediate tick to seed first symbol soon
+    const id = setInterval(tick, 30_000)
+    // Kick off immediately (non-blocking)
+    tick()
+
+    return () => {
+      isCancelled = true
+      clearInterval(id)
+    }
+  }, [liveInputs])
 
   // ── Return ────────────────────────────────────────────────────────────
   return {
