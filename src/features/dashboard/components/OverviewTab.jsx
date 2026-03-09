@@ -1,4 +1,5 @@
-import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield} from 'lucide-react'
+import { useState } from 'react'
+import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield, Pencil} from 'lucide-react'
 import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
 import {
     Line,
@@ -8,6 +9,9 @@ import {
 } from 'recharts'
 import MetricCard, {BreakdownRow, PillarRow} from '../../../components/ui/MetricCard.jsx'
 import {EmptyState} from "./EmptyState.jsx";
+import { useFirestore } from '../../../hooks/useFirestore.js'
+import { useAuthContext } from '../../../hooks/useAuthContext.js'
+import { recalculateNetWorth } from '../../../services/financialDataService.js'
 
 const CARD_CLASS =
     'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5'
@@ -39,7 +43,33 @@ function OverviewTab({
     isEmpty = false,
     onUploadClick,
     onFinished,
+    onRefresh,
 }) {
+    const { refreshProfile } = useAuthContext()
+    const { update } = useFirestore('users')
+
+    const [editingIncome, setEditingIncome] = useState(false)
+    const [incomeInput,   setIncomeInput]   = useState('')
+    const [savingIncome,  setSavingIncome]  = useState(false)
+
+    async function handleSaveIncome() {
+        const val = parseFloat(incomeInput)
+        if (isNaN(val) || val <= 0) { setEditingIncome(false); return }
+        setSavingIncome(true)
+        try {
+            await update(userProfile.uid, { monthly_income: val })
+            await refreshProfile()
+            await recalculateNetWorth(userProfile.uid)
+            if (onRefresh) onRefresh()
+        } catch (err) {
+            console.error('Failed to save income:', err)
+        } finally {
+            setSavingIncome(false)
+            setEditingIncome(false)
+            setIncomeInput('')
+        }
+    }
+
     if (isEmpty) {
         return (
             <EmptyState
@@ -63,7 +93,7 @@ function OverviewTab({
             {/* ── Greeting header ── */}
             <header className="px-1">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                    Good morning, {userProfile.name.split(' ')[0]} 👋
+                    Welcome Back, {userProfile.name.split(' ')[0]} 👋
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
                     {todayLabel} · {userProfile.location} · {userProfile.riskProfile} risk profile
@@ -133,14 +163,61 @@ function OverviewTab({
                         Breakdown
                     </p>
                     <div className="space-y-2.5">
+                        {/* ── Editable income row ── */}
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-500">Monthly income</span>
-                            <span className="font-semibold text-slate-800">{savingsDetail.income}</span>
+                            {editingIncome ? (
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-slate-400">SGD</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        autoFocus
+                                        value={incomeInput}
+                                        onChange={(e) => setIncomeInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSaveIncome()
+                                            if (e.key === 'Escape') setEditingIncome(false)
+                                        }}
+                                        className="w-24 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-right text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary"
+                                    />
+                                    <button
+                                        onClick={handleSaveIncome}
+                                        disabled={savingIncome}
+                                        className="rounded-lg bg-brand-primary px-2 py-1 text-[10px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        {savingIncome ? '…' : 'Save'}
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingIncome(false)}
+                                        className="text-[10px] text-slate-400 hover:text-slate-600"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setIncomeInput(userProfile.monthly_income?.toString() ?? '')
+                                        setEditingIncome(true)
+                                    }}
+                                    className="group flex items-center gap-1 font-semibold text-slate-800 transition hover:text-brand-primary"
+                                    title="Click to edit"
+                                >
+                                    {savingsDetail.income}
+                                    <Pencil className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
+                                </button>
+                            )}
                         </div>
+                        {/* ── Auto-derived expenses row ── */}
                         <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">Monthly expenses</span>
+                            <span className="flex items-center gap-1 text-slate-500">
+                                This month's spending
+                                <InfoTooltip text="Auto-calculated from debit transactions in your uploaded statements for the current calendar month." />
+                            </span>
                             <span className="font-semibold text-slate-800">{savingsDetail.expenses}</span>
                         </div>
+                        {/* ── Net savings ── */}
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-500">Net savings</span>
                             <span className="font-bold text-emerald-600">{savingsDetail.net}</span>

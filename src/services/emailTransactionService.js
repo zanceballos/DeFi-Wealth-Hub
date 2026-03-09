@@ -4,6 +4,10 @@
  * Firestore CRUD for email-sourced transactions.
  * Collection: /users/{uid}/emailTransactions/{txId}
  *
+ * Schema per doc:
+ *   subject, from, receivedAt, source, direction, amount, merchant,
+ *   category, currency, description, parsedAt, edited
+ *
  * Transaction statuses: 'pending' | 'approved' | 'rejected'
  */
 
@@ -85,6 +89,7 @@ export async function rejectTransaction(uid, txId) {
 
 /**
  * Edit and approve a transaction (update fields then set status to approved).
+ * Sets edited: true to indicate user manually edited this transaction.
  *
  * @param {string} uid
  * @param {string} txId
@@ -92,6 +97,7 @@ export async function rejectTransaction(uid, txId) {
  * @returns {Promise<void>}
  */
 export async function editTransaction(uid, txId, updates) {
+  if (!uid || !txId) return
   const ref = doc(db, 'users', uid, 'emailTransactions', txId)
   // Only allow safe fields to be updated
   const allowed = ['source', 'merchant', 'amount', 'date', 'time', 'category', 'direction', 'currency', 'description']
@@ -103,6 +109,7 @@ export async function editTransaction(uid, txId, updates) {
   }
   await updateDoc(ref, {
     ...safeUpdates,
+    edited: true,
     status: 'approved',
     updatedAt: serverTimestamp(),
   })

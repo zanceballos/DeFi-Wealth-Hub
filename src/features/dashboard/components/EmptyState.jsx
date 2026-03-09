@@ -2,6 +2,7 @@ import {useState} from 'react'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase'
 import { useAuth } from '../../../hooks/useAuth'
+import { recalculateNetWorth } from '../../../services/financialDataService.js'
 import {
     Activity,
     FileText,
@@ -142,6 +143,8 @@ export function EmptyState({ userName, todayLabel, onUploadClick, onCollectIniti
             if (user?.uid) {
                 const userRef = doc(db, 'users', user.uid)
                 await setDoc(userRef, { manual_accounts: payload }, { merge: true })
+                // Compute wellness + net-worth history so the dashboard shows real data
+                await recalculateNetWorth(user.uid)
             } else {
                 console.warn('EmptyState.handleFinish: No authenticated user; skipping Firestore write')
             }

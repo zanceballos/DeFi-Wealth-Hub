@@ -12,6 +12,7 @@ import { db } from '../lib/firebase.js'
 import { useAuthContext } from './useAuthContext.js'
 import { subscribeEmailTransactions, approveTransaction, rejectTransaction, editTransaction } from '../services/emailTransactionService.js'
 import { syncGmailTransactions, isTokenValid } from '../services/gmailService.js'
+import { recalculateNetWorth } from '../services/financialDataService.js'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -46,6 +47,18 @@ export default function useEmailTransactions({ enabled = true } = {}) {
       await setDoc(doc(db, 'users', uid), {
         lastGmailSync: serverTimestamp(),
       }, { merge: true })
+      // Trigger recalculation if new transactions were saved
+      if (result.newCount > 0) {
+        // Fire-and-forget recalculation
+        recalculateNetWorth(uid).catch((err) =>
+          console.error('[useEmailTransactions] recalc failed:', err),
+        )
+        // Clear advisory cache so next visit re-generates
+        try {
+          sessionStorage.removeItem('dwh_advisory')
+          sessionStorage.removeItem('dwh_advisory_payload')
+        } catch { /* ignore */ }
+      }
     } catch (err) {
       setSyncError(err.message || 'Sync failed')
     } finally {
@@ -72,7 +85,11 @@ export default function useEmailTransactions({ enabled = true } = {}) {
 
   // ── Actions ───────────────────────────────────────────────────────────
   const approve = useCallback(
-    (txId) => approveTransaction(uid, txId),
+    async (txId) => {
+      await approveTransaction(uid, txId)
+      recalculateNetWorth(uid).catch(() => {})
+      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+    },
     [uid],
   )
 
@@ -82,7 +99,11 @@ export default function useEmailTransactions({ enabled = true } = {}) {
   )
 
   const edit = useCallback(
-    (txId, updates) => editTransaction(uid, txId, updates),
+    async (txId, updates) => {
+      await editTransaction(uid, txId, updates)
+      recalculateNetWorth(uid).catch(() => {})
+      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+    },
     [uid],
   )
 
