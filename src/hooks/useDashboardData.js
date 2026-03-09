@@ -20,7 +20,7 @@
  *   }
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db } from '../lib/firebase.js'
 import {
   collection,
@@ -30,8 +30,7 @@ import {
   orderBy,
   query,
   limit,
-  setDoc,
-  serverTimestamp,
+  onSnapshot,
 } from 'firebase/firestore'
 import { useAuthContext } from './useAuthContext.js'
 import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
@@ -39,15 +38,18 @@ import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
 import {
   buildWalletViewModel,
   buildBudgetViewModel,
+  buildTransactionsViewModel,
   safeNumber,
 } from '../services/dashboardViewModel.js'
 import { getYfPrice } from '../services/marketDataService.js'
 
-// ── Mock fallback data (original static constants) ──
-import { HERO_STATS as MOCK_HERO } from '../data/mockHero.js'
-import { PILLAR_SCORES as MOCK_PILLARS } from '../data/mockPillar.js'
-import { NET_WORTH_SERIES as MOCK_NET_WORTH } from '../data/mockNetworth.js'
-import { USER_PROFILE as MOCK_USER_PROFILE } from '../data/mockUserData.js'
+// ── Empty defaults (no mock data — real values come from Firestore) ──
+const EMPTY_HERO = {
+  netWorth: { value: 'S$0', delta: '' },
+  wellness: { score: 0, label: '' },
+  savings:  { value: 'S$0', rate: 0 },
+}
+const EMPTY_USER_PROFILE = { name: '', riskProfile: '', location: '' }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Overview-specific helpers (kept here because they reference lucide icons
@@ -136,21 +138,7 @@ const BREAKDOWN_LABELS = {
   bonds:      'Bonds',
 }
 
-// ── Mock fallback values for overview card detail panels ──
-const MOCK_SAVINGS_DETAIL = {
-  income:   'S$4,490',
-  expenses: 'S$3,458',
-  net:      'S$1,032',
-  target:   20,
-}
 
-const MOCK_NET_WORTH_BREAKDOWN = [
-  { color: 'bg-emerald-400', label: 'Cash & savings',   value: 'S$32,100', percent: 37 },
-  { color: 'bg-blue-500',    label: 'Stocks & ETFs',    value: 'S$28,400', percent: 33 },
-  { color: 'bg-amber-400',   label: 'Crypto',           value: 'S$12,800', percent: 15 },
-  { color: 'bg-rose-400',    label: 'Property',         value: 'S$8,200',  percent: 10 },
-  { color: 'bg-violet-400',  label: 'Tokenised assets', value: 'S$4,200',  percent: 5 },
-]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hook
@@ -166,19 +154,82 @@ export default function useDashboardData() {
   const [isEmpty, setIsEmpty]       = useState(false)
 
   // Overview tab
-  const [userProfile, setUserProfile]             = useState(MOCK_USER_PROFILE)
-  const [heroStats, setHeroStats]                 = useState(MOCK_HERO)
-  const [pillarScores, setPillarScores]           = useState(MOCK_PILLARS)
-  const [netWorthSeries, setNetWorthSeries]       = useState(MOCK_NET_WORTH)
-  const [savingsDetail, setSavingsDetail]         = useState(MOCK_SAVINGS_DETAIL)
-  const [netWorthBreakdown, setNetWorthBreakdown] = useState(MOCK_NET_WORTH_BREAKDOWN)
+  const [userProfile, setUserProfile]             = useState(EMPTY_USER_PROFILE)
+  const [heroStats, setHeroStats]                 = useState(EMPTY_HERO)
+  const [pillarScores, setPillarScores]           = useState([])
+  const [netWorthSeries, setNetWorthSeries]       = useState([])
+  const [savingsDetail, setSavingsDetail]         = useState({ income: 'S$0', expenses: 'S$0', net: 'S$0', target: 20 })
+  const [netWorthBreakdown, setNetWorthBreakdown] = useState([])
 
-  // Wallet + Budget tabs
+  // Wallet + Budget + Transactions tabs
   const [walletViewModel, setWalletViewModel] = useState(() => buildWalletViewModel())
   const [budgetViewModel, setBudgetViewModel] = useState(() => buildBudgetViewModel())
+  const [transactionsViewModel, setTransactionsViewModel] = useState(() => buildTransactionsViewModel())
+  const [emailTransactions, setEmailTransactions] = useState([])
 
   // Raw data
-  const [raw, setRaw] = useState({ profile: null, statements: [], wellness: null, netWorthHistory: [] })
+  const [raw, setRaw] = useState({ profile: null, statements: [], wellness: null, netWorthHistory: [], emailTransactions: [] })
+
+  // Keep refs so the onSnapshot callbacks always have the latest data
+  const statementsRef = useRef([])
+  const profileRef = useRef(null)
+  const emailTxRef = useRef([])
+  const excludedFpRef = useRef([])
+
+  // ── Helper: apply wellness data to overview state ─────────────────────
+  const applyWellness = useCallback((wellness, profile, statements, emailTx) => {
+    if (!wellness) return
+    const km           = wellness.key_metrics ?? {}
+    const netWorth     = safeNumber(km.net_worth)
+    const savingsRate  = safeNumber(km.savings_rate_pct)
+    const monthlyIncome = safeNumber(profile?.monthly_income)
+    const monthlyExp    = safeNumber(profile?.monthly_expenses)
+    const netSavings    = monthlyIncome - monthlyExp
+
+    setHeroStats({
+      netWorth: {
+        value: fmtCurrency(netWorth),
+        delta: wellness.status === 'green' ? 'Healthy'
+          : wellness.status === 'amber' ? 'Moderate'
+            : 'Needs attention',
+      },
+      wellness: {
+        score: wellness.overall_score ?? 0,
+        label: wellnessLabel(wellness.overall_score ?? 0),
+      },
+      savings: {
+        value: fmtCurrency(Math.max(netSavings, 0)),
+        rate: Math.round(savingsRate),
+      },
+    })
+
+    setSavingsDetail({
+      income:   fmtCurrency(monthlyIncome),
+      expenses: fmtCurrency(monthlyExp),
+      net:      fmtCurrency(netSavings),
+      target:   20,
+    })
+
+    const pillars = wellness.pillars ?? {}
+    setPillarScores(
+      Object.entries(PILLAR_META).map(([key, meta]) => {
+        const p     = pillars[key] ?? {}
+        const score = p.score ?? 0
+        return {
+          name: meta.label,
+          score,
+          ...scoreToColor(score),
+          icon: meta.icon,
+          description: pillarDescription(key, score),
+          calculationTooltip: meta.calculationTooltip,
+        }
+      }),
+    )
+
+    // Rebuild wallet + budget with fresh wellness + email transactions
+    setWalletViewModel(buildWalletViewModel({ statements, wellness, emailTransactions: emailTx }))
+    setBudgetViewModel(buildBudgetViewModel({ profile, statements, wellness }))
+  }, [])
 
   // ── Fetch ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -197,9 +248,10 @@ export default function useDashboardData() {
 
       if (profile) {
         setUserProfile({
-          name:        profile.name ?? profile.displayName ?? MOCK_USER_PROFILE.name,
-          riskProfile: profile.riskProfile ?? profile.risk_profile ?? MOCK_USER_PROFILE.riskProfile,
-          location:    profile.location ?? MOCK_USER_PROFILE.location,
+          uid,
+          name:        profile.name ?? profile.displayName ?? '',
+          riskProfile: profile.riskProfile ?? profile.risk_profile ?? '',
+          location:    profile.location ?? '',
         })
       }
 
@@ -234,8 +286,25 @@ export default function useDashboardData() {
       const historyItems = []
       historySnap.forEach((d) => historyItems.push(d.data()))
 
+      // 5. Email transactions (Source C)
+      let emailTxItems = []
+      try {
+        const emailTxCol = collection(db, 'users', uid, 'emailTransactions')
+        const emailTxSnap = await getDocs(query(emailTxCol, orderBy('createdAt', 'desc'), limit(500)))
+        emailTxSnap.forEach((d) => emailTxItems.push({ id: d.id, ...d.data() }))
+        emailTxItems = emailTxItems.filter((tx) => !tx.deleted)
+      } catch {
+        emailTxItems = []
+      }
+      setEmailTransactions(emailTxItems)
+
       // ── Save raw ──────────────────────────────────────────────────────
-      setRaw({ profile, statements, wellness, netWorthHistory: historyItems })
+      statementsRef.current = statements
+      profileRef.current = profile
+      emailTxRef.current = emailTxItems
+      const excludedFp = Array.isArray(profile?.excluded_tx_fingerprints) ? profile.excluded_tx_fingerprints : []
+      excludedFpRef.current = excludedFp
+      setRaw({ profile, statements, wellness, netWorthHistory: historyItems, emailTransactions: emailTxItems })
 
       // ── Detect empty state ────────────────────────────────────────────
       // Also consider manual_accounts saved on the user document
@@ -244,61 +313,14 @@ export default function useDashboardData() {
         (Array.isArray(manual?.accounts) && manual.accounts.length > 0) ||
         (Array.isArray(manual?.investments) && manual.investments.length > 0)
       )
-      const hasData = hasManual || !!wellness || activeStmts.length > 0 || historyItems.length > 0
+      const hasEmailTx = emailTxItems.length > 0
+      const hasData = hasManual || !!wellness || activeStmts.length > 0 || historyItems.length > 0 || hasEmailTx
       setIsEmpty(!hasData)
 
       // ════════════════════════════════════════════════════════════════════
-      // OVERVIEW TAB transformations
+      // OVERVIEW TAB transformations + Wallet/Budget rebuild
       // ════════════════════════════════════════════════════════════════════
-      if (wellness) {
-        const km             = wellness.key_metrics ?? {}
-        const netWorth       = safeNumber(km.net_worth)
-        const savingsRate    = safeNumber(km.savings_rate_pct)
-        const monthlyIncome  = safeNumber(profile?.monthly_income)
-        const monthlyExp     = safeNumber(profile?.monthly_expenses)
-        const netSavings     = monthlyIncome - monthlyExp
-
-        setHeroStats({
-          netWorth: {
-            value: fmtCurrency(netWorth),
-            delta: wellness.status === 'green' ? 'Healthy'
-              : wellness.status === 'amber' ? 'Moderate'
-                : 'Needs attention',
-          },
-          wellness: {
-            score: wellness.overall_score ?? 0,
-            label: wellnessLabel(wellness.overall_score ?? 0),
-          },
-          savings: {
-            value: fmtCurrency(Math.max(netSavings, 0)),
-            rate: Math.round(savingsRate),
-          },
-        })
-
-        setSavingsDetail({
-          income:   fmtCurrency(monthlyIncome),
-          expenses: fmtCurrency(monthlyExp),
-          net:      fmtCurrency(netSavings),
-          target:   20,
-        })
-
-        // Pillar scores
-        const pillars = wellness.pillars ?? {}
-        setPillarScores(
-          Object.entries(PILLAR_META).map(([key, meta]) => {
-            const p     = pillars[key] ?? {}
-            const score = p.score ?? 0
-            return {
-              name: meta.label,
-              score,
-              ...scoreToColor(score),
-              icon: meta.icon,
-              description: pillarDescription(key, score),
-              calculationTooltip: meta.calculationTooltip,
-            }
-          }),
-        )
-      }
+      applyWellness(wellness, profile, statements, emailTxItems)
 
       // Asset breakdown (overview card)
       if (activeStmts.length > 0) {
@@ -321,17 +343,7 @@ export default function useDashboardData() {
             percent: grandTotal > 0 ? Math.round((v / grandTotal) * 100) : 0,
           }))
         if (breakdown.length > 0) {
-          setNetWorthBreakdown((prev = []) => {
-            const nextByLabel = new Map(breakdown.map((i) => [i.label, i]))
-            const result = Array.isArray(prev)
-              ? prev.map((it) => nextByLabel.get(it.label) ?? it)
-              : []
-            const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
-            for (const item of breakdown) {
-              if (!prevLabels.has(item.label)) result.push(item)
-            }
-            return result
-          })
+          setNetWorthBreakdown(breakdown)
         }
       }
 
@@ -409,17 +421,9 @@ export default function useDashboardData() {
             percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
           }))
 
-        setNetWorthBreakdown((prev = []) => {
-          const nextByLabel = new Map(breakdown2.map((i) => [i.label, i]))
-          const result = Array.isArray(prev)
-            ? prev.map((it) => nextByLabel.get(it.label) ?? it)
-            : []
-          const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
-          for (const item of breakdown2) {
-            if (!prevLabels.has(item.label)) result.push(item)
-          }
-          return result
-        })
+        if (breakdown2.length > 0) {
+          setNetWorthBreakdown(breakdown2)
+        }
       }
 
       // Net worth time series
@@ -433,13 +437,10 @@ export default function useDashboardData() {
       }
 
       // ════════════════════════════════════════════════════════════════════
-      // WALLET + BUDGET TAB view models (delegated to dashboardViewModel)
+      // TRANSACTIONS TAB view model (wallet + budget already set by applyWellness)
       // ════════════════════════════════════════════════════════════════════
-      setWalletViewModel(
-        buildWalletViewModel({ profile, statements, wellness, netWorthHistory: historyItems }),
-      )
-      setBudgetViewModel(
-        buildBudgetViewModel({ profile, statements, wellness }),
+      setTransactionsViewModel(
+        buildTransactionsViewModel({ statements, emailTransactions: emailTxItems, excludedFingerprints: excludedFpRef.current }),
       )
     } catch (err) {
       console.error('useDashboardData: failed to fetch from Firestore', err)
@@ -448,11 +449,66 @@ export default function useDashboardData() {
     } finally {
       setLoading(false)
     }
-  }, [uid])
+  }, [uid, applyWellness])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // ── Real-time listener for emailTransactions (so Gmail sync updates UI) ──
+  useEffect(() => {
+    if (!uid) return
+    const emailTxCol = collection(db, 'users', uid, 'emailTransactions')
+    const q = query(emailTxCol, orderBy('createdAt', 'desc'), limit(500))
+    const unsub = onSnapshot(q, (snap) => {
+      const items = []
+      snap.forEach((d) => items.push({ id: d.id, ...d.data() }))
+      const filtered = items.filter((tx) => !tx.deleted)
+      emailTxRef.current = filtered
+      setEmailTransactions(filtered)
+      setRaw((prev) => ({ ...prev, emailTransactions: filtered }))
+      setTransactionsViewModel(
+        buildTransactionsViewModel({ statements: statementsRef.current, emailTransactions: filtered, excludedFingerprints: excludedFpRef.current }),
+      )
+      // If we now have email txns, clear empty state
+      if (filtered.length > 0) setIsEmpty(false)
+    })
+    return unsub
+  }, [uid])
+
+  // ── Real-time listener for wellness (so recalculateNetWorth updates overview + wallet + budget) ──
+  useEffect(() => {
+    if (!uid) return
+    const wellnessRef = doc(db, 'users', uid, 'wellness', 'current')
+    const unsub = onSnapshot(wellnessRef, (snap) => {
+      if (!snap.exists()) return
+      const wellness = snap.data()
+      setRaw((prev) => ({ ...prev, wellness }))
+      applyWellness(wellness, profileRef.current, statementsRef.current, emailTxRef.current)
+    })
+    return unsub
+  }, [uid, applyWellness])
+
+  // ── Real-time listener for net-worth history (keeps chart + series in sync) ──
+  useEffect(() => {
+    if (!uid) return
+    const historyRef = collection(db, 'users', uid, 'history', 'net_worth', 'items')
+    const q = query(historyRef, orderBy('month_key', 'asc'))
+    const unsub = onSnapshot(q, (snap) => {
+      const items = []
+      snap.forEach((d) => items.push(d.data()))
+      setRaw((prev) => ({ ...prev, netWorthHistory: items }))
+      if (items.length > 0) {
+        setNetWorthSeries(
+          items.map((item) => ({
+            month: item.month ?? item.month_key,
+            value: item.value ?? 0,
+          })),
+        )
+      }
+    })
+    return unsub
+  }, [uid])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Manual holdings aggregation helpers (quantities per asset by type)
@@ -545,17 +601,7 @@ export default function useDashboardData() {
         percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
       }))
     if (breakdown.length > 0) {
-      setNetWorthBreakdown((prev = []) => {
-        const nextByLabel = new Map(breakdown.map((i) => [i.label, i]))
-        const result = Array.isArray(prev)
-          ? prev.map((it) => nextByLabel.get(it.label) ?? it)
-          : []
-        const prevLabels = new Set((Array.isArray(prev) ? prev : []).map((i) => i.label))
-        for (const item of breakdown) {
-          if (!prevLabels.has(item.label)) result.push(item)
-        }
-        return result
-      })
+      setNetWorthBreakdown(breakdown)
     }
   }, [raw.statements, manualHoldings])
 
@@ -651,6 +697,7 @@ export default function useDashboardData() {
     loading,
     error,
     isEmpty,
+    setIsEmpty,
 
     // Overview tab
     userProfile,
@@ -660,9 +707,25 @@ export default function useDashboardData() {
     savingsDetail,
     netWorthBreakdown,
 
-    // Wallet & Budget tabs
+    // Wallet & Budget & Transactions tabs
     walletViewModel,
     budgetViewModel,
+    transactionsViewModel,
+    emailTransactions,
+
+    // Excluded transaction fingerprints (persisted on user profile)
+    excludedFingerprints: excludedFpRef.current,
+    updateExcludedFingerprints(fps) {
+      excludedFpRef.current = fps
+      // Rebuild transactions view model with updated exclusions
+      setTransactionsViewModel(
+        buildTransactionsViewModel({
+          statements: statementsRef.current,
+          emailTransactions: emailTxRef.current,
+          excludedFingerprints: fps,
+        }),
+      )
+    },
 
     // Raw Firestore data
     raw,

@@ -275,6 +275,12 @@ export async function syncGmailTransactions(uid) {
 
       await addDoc(txCol, {
         ...parsed,
+        // New schema fields
+        subject: parsed.emailSubject ?? '',
+        from: parsed.emailFrom ?? '',
+        receivedAt: parsed.emailDate ? new Date(parsed.emailDate) : serverTimestamp(),
+        parsedAt: serverTimestamp(),
+        edited: false,
         uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

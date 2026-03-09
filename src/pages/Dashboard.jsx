@@ -1,4 +1,5 @@
-import {useState, useCallback} from 'react'
+import {useState, useCallback, useEffect} from 'react'
+import { Lock } from 'lucide-react'
 import OverviewTab from '../features/dashboard/components/OverviewTab.jsx'
 import BudgetingTab from '../features/dashboard/components/BudgetingTab.jsx'
 import WalletTab from '../features/dashboard/components/WalletTab.jsx'
@@ -21,8 +22,22 @@ export default function Dashboard() {
         netWorthBreakdown,
         walletViewModel,
         budgetViewModel,
+        transactionsViewModel,
+        excludedFingerprints,
+        updateExcludedFingerprints,
         refresh,
     } = useDashboardData()
+
+    // Gate: tabs that require accounts are locked while the dashboard is empty
+    const hasAccounts = !isEmpty && !loading
+
+    // Redirect to overview if user lands on a locked tab
+    useEffect(() => {
+        const current = TABS.find((t) => t.id === activeTab)
+        if (current?.requiresAccounts && !hasAccounts) {
+            setActiveTab('overview')
+        }
+    }, [hasAccounts, activeTab])
 
     const openOverlay = useCallback(() => setOverlayOpen(true), [])
     const closeOverlay = useCallback(() => setOverlayOpen(false), [])
@@ -49,20 +64,28 @@ export default function Dashboard() {
 
             <div className="sticky top-0 z-20 mb-6 rounded-2xl border border-white/70 bg-white/70 p-2 backdrop-blur-xl">
                 <div className="flex items-center gap-2">
-                    {TABS.map((tab) => (
-                        <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`px-5 py-2.5 text-sm font-semibold transition ${
-                                activeTab === tab.id
-                                    ? 'rounded-xl bg-brand-primary text-white'
-                                    : 'rounded-xl text-gray-500 hover:text-brand-primary hover:bg-gray-100'
-                            }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                    {TABS.map((tab) => {
+                        const locked = tab.requiresAccounts && !hasAccounts
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                disabled={locked}
+                                title={locked ? 'Complete onboarding to unlock' : undefined}
+                                onClick={() => !locked && setActiveTab(tab.id)}
+                                className={`px-5 py-2.5 text-sm font-semibold transition ${
+                                    locked
+                                        ? 'rounded-xl text-gray-400 opacity-40 cursor-not-allowed'
+                                        : activeTab === tab.id
+                                            ? 'rounded-xl bg-brand-primary text-white'
+                                            : 'rounded-xl text-gray-500 hover:text-brand-primary hover:bg-gray-100'
+                                }`}
+                            >
+                                {locked && <Lock className="mr-1 inline h-3 w-3" />}
+                                {tab.label}
+                            </button>
+                        )
+                    })}
                 </div>
             </div>
 
@@ -84,9 +107,16 @@ export default function Dashboard() {
                         isEmpty={isEmpty}
                         onUploadClick={openOverlay}
                         onFinished={handleOnboardingFinished}
+                        onRefresh={refresh}
                     />
                 ) : activeTab === 'budgeting' ? (
-                    <BudgetingTab viewModel={budgetViewModel} onUploadClick={openOverlay} />
+                    <BudgetingTab
+                        viewModel={budgetViewModel}
+                        transactionsViewModel={transactionsViewModel}
+                        excludedFingerprints={excludedFingerprints}
+                        updateExcludedFingerprints={updateExcludedFingerprints}
+                        onUploadClick={openOverlay}
+                    />
                 ) : (
                     <WalletTab
                         walletAllocation={walletViewModel.allocation}

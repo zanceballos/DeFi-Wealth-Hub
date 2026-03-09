@@ -49,10 +49,10 @@ const RISK_COLORS = {
 }
 
 const SEVERITY_STYLES = {
-  positive: { border: 'border-emerald-200', bg: 'bg-emerald-50', icon: ShieldCheck,    iconColor: 'text-emerald-500' },
-  neutral:  { border: 'border-sky-200',     bg: 'bg-sky-50',     icon: Lightbulb,      iconColor: 'text-sky-500' },
-  warning:  { border: 'border-amber-200',   bg: 'bg-amber-50',   icon: AlertTriangle,  iconColor: 'text-amber-500' },
-  critical: { border: 'border-red-200',     bg: 'bg-red-50',     icon: AlertTriangle,  iconColor: 'text-red-500' },
+  positive: { border: 'border-emerald-200', bg: 'bg-emerald-50', icon: ShieldCheck,   iconColor: 'text-emerald-500', label: 'Great ✓' },
+  neutral:  { border: 'border-sky-200',     bg: 'bg-sky-50',     icon: Lightbulb,     iconColor: 'text-sky-500',     label: 'Watch out ⚠' },
+  warning:  { border: 'border-amber-200',   bg: 'bg-amber-50',   icon: AlertTriangle, iconColor: 'text-amber-500',   label: 'Action needed 🔴' },
+  critical: { border: 'border-red-200',     bg: 'bg-red-50',     icon: AlertTriangle, iconColor: 'text-red-500',     label: 'Action needed 🔴' },
 }
 
 const PRIORITY_STYLES = {
@@ -91,25 +91,48 @@ function AdvisorySkeleton() {
   )
 }
 
-// ─── Empty state ────────────────────────────────────────────────────────────
+// ─── No data empty state ────────────────────────────────────────────────────
 
-function EmptyAdvisory({ onRefresh, loading }) {
+function NoDataAdvisory({ onRefresh, loading }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center backdrop-blur-sm">
-      <Brain className="mb-4 h-14 w-14 text-sky-300" />
-      <h2 className="text-lg font-semibold text-slate-700">No Advisory Data Yet</h2>
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50">
+        <Brain className="h-8 w-8 text-sky-300" />
+      </div>
+      <h2 className="text-lg font-semibold text-slate-700">No Insights Yet</h2>
       <p className="mt-2 max-w-md text-sm text-slate-500">
         Upload at least one financial statement from the Dashboard so the AI can analyse your portfolio and generate personalised insights.
       </p>
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={loading}
-        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary/90 disabled:opacity-50"
-      >
-        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        Generate Advisory
-      </button>
+      <div className="mt-6 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary/90 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          {loading ? 'Generating…' : 'Generate Advisory'}
+        </button>
+      </div>
+
+      {/* Preview of what they'll unlock */}
+      <div className="mt-10 grid grid-cols-1 gap-3 text-left sm:grid-cols-3 max-w-2xl w-full">
+        {[
+          { icon: Lightbulb, color: 'bg-amber-50 text-amber-500',    title: 'Key Insights',        desc: 'Colour-coded findings across liquidity, risk, and diversification.' },
+          { icon: Zap,       color: 'bg-sky-50 text-sky-500',        title: 'Recommended Actions', desc: 'Prioritised steps to improve your financial health score.' },
+          { icon: BookOpen,  color: 'bg-emerald-50 text-emerald-500', title: 'Learn More',          desc: 'Expandable education topics tailored to your portfolio.' },
+        ].map(({ icon: Icon, color, title, desc }) => (
+          <div key={title} className="flex items-start gap-3 rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur-xl">
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${color}`}>
+              <Icon className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-700">{title}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -122,9 +145,7 @@ function HeroCard({ advisory, payload }) {
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/80 p-6 shadow-sm backdrop-blur-xl sm:p-8">
-      {/* Decorative blob */}
       <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-sky-100/50 blur-3xl" />
-
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
@@ -136,7 +157,6 @@ function HeroCard({ advisory, payload }) {
           <h2 className="text-lg font-semibold text-sky-600">{advisory.headline}</h2>
           <p className="max-w-2xl text-sm leading-relaxed text-slate-600">{advisory.summary}</p>
         </div>
-
         <div className="flex shrink-0 flex-col items-end gap-2">
           <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${riskClass}`}>
             Risk: {advisory.risk_level}
@@ -144,7 +164,9 @@ function HeroCard({ advisory, payload }) {
           {score > 0 && (
             <div className="text-right">
               <p className="text-xs text-slate-400">Wellness Score</p>
-              <p className="text-2xl font-bold text-sky-600">{score}<span className="text-sm font-normal text-slate-400">/100</span></p>
+              <p className="text-2xl font-bold text-sky-600">
+                {score}<span className="text-sm font-normal text-slate-400">/100</span>
+              </p>
             </div>
           )}
         </div>
@@ -154,27 +176,27 @@ function HeroCard({ advisory, payload }) {
 }
 
 function SnapshotCards({ payload }) {
-  const w = payload?.wellness ?? {}
-  const p = payload?.portfolio ?? {}
+  const w  = payload?.wellness ?? {}
+  const p  = payload?.portfolio ?? {}
   const km = w.key_metrics ?? {}
 
   const cards = [
     {
       label: 'Net Worth',
       value: km.net_worth ? `S$${km.net_worth.toLocaleString('en-SG', { minimumFractionDigits: 2 })}` : '—',
-      icon: TrendingUp,
+      icon:  TrendingUp,
       color: 'text-emerald-500',
     },
     {
       label: 'Cash Buffer',
       value: km.cash_buffer_months ? `${km.cash_buffer_months.toFixed(1)} months` : '—',
-      icon: Droplets,
+      icon:  Droplets,
       color: 'text-sky-500',
     },
     {
       label: 'Platforms',
       value: p.total_statements ?? 0,
-      icon: Activity,
+      icon:  Activity,
       color: 'text-sky-500',
     },
   ]
@@ -213,10 +235,10 @@ function InsightsSection({ insights }) {
       </h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {insights.map((ins, idx) => {
-          const style = SEVERITY_STYLES[ins.severity] ?? SEVERITY_STYLES.neutral
+          const style        = SEVERITY_STYLES[ins.severity] ?? SEVERITY_STYLES.neutral
           const CategoryIcon = CATEGORY_ICONS[ins.category] ?? Lightbulb
           const SeverityIcon = style.icon
-          const isLastOdd = insights.length % 2 === 1 && idx === insights.length - 1
+          const isLastOdd    = insights.length % 2 === 1 && idx === insights.length - 1
 
           return (
             <div
@@ -228,7 +250,10 @@ function InsightsSection({ insights }) {
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {ins.category?.replace('_', ' ')}
                 </span>
-                <SeverityIcon className={`ml-auto h-4 w-4 ${style.iconColor}`} />
+                <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${style.bg} ${style.iconColor}`}>
+                  <SeverityIcon className="h-3 w-3" />
+                  {style.label}
+                </span>
               </div>
               <h4 className="text-sm font-semibold text-slate-800">{ins.title}</h4>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{ins.description}</p>
@@ -279,7 +304,6 @@ function ActionsSection({ actions }) {
 
 function EducationSection({ education }) {
   const [openIdx, setOpenIdx] = useState(null)
-
   if (!education?.length) return null
 
   return (
@@ -292,21 +316,17 @@ function EducationSection({ education }) {
         {education.map((edu, idx) => {
           const isOpen = openIdx === idx
           return (
-            <div
-              key={idx}
-              className="rounded-2xl border border-white/70 bg-white/80 shadow-sm backdrop-blur-xl"
-            >
+            <div key={idx} className="rounded-2xl border border-white/70 bg-white/80 shadow-sm backdrop-blur-xl">
               <button
                 type="button"
                 onClick={() => setOpenIdx(isOpen ? null : idx)}
                 className="flex w-full items-center justify-between p-5 text-left"
               >
                 <span className="text-sm font-semibold text-slate-700">{edu.topic}</span>
-                {isOpen ? (
-                  <ChevronUp className="h-4 w-4 text-slate-400" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-slate-400" />
-                )}
+                {isOpen
+                  ? <ChevronUp className="h-4 w-4 text-slate-400" />
+                  : <ChevronDown className="h-4 w-4 text-slate-400" />
+                }
               </button>
               {isOpen && (
                 <div className="border-t border-slate-100 px-5 pb-5 pt-3">
@@ -337,6 +357,16 @@ function DataUsedSection({ payload }) {
         {(p?.platforms ?? []).map((pl) => (
           <span key={pl} className="rounded-full bg-slate-100 px-3 py-1">{pl}</span>
         ))}
+        {(payload.email_transactions?.total_transactions ?? 0) > 0 && (
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-600">
+            {payload.email_transactions.total_transactions} email transaction(s)
+          </span>
+        )}
+        {(p?.manual_accounts_summary?.cash_total ?? 0) > 0 && (
+          <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-600">
+            Manual accounts linked
+          </span>
+        )}
         <span className="rounded-full bg-slate-100 px-3 py-1">
           {payload.trends?.net_worth_history?.length ?? 0} months history
         </span>
@@ -345,16 +375,14 @@ function DataUsedSection({ payload }) {
   )
 }
 
-// ─── Main page component ────────────────────────────────────────────────────
+// ─── Session cache helpers ───────────────────────────────────────────────────
 
-// Session-storage keys for caching the Groq response within the browser tab
 const SS_ADVISORY = 'dwh_advisory'
 const SS_PAYLOAD  = 'dwh_advisory_payload'
 const SS_UID      = 'dwh_advisory_uid'
 
 function readSessionCache(uid) {
   try {
-    // Only return cache if it belongs to the current user
     if (sessionStorage.getItem(SS_UID) !== uid) return null
     const a = sessionStorage.getItem(SS_ADVISORY)
     const p = sessionStorage.getItem(SS_PAYLOAD)
@@ -377,42 +405,43 @@ function clearSessionCache() {
   sessionStorage.removeItem(SS_UID)
 }
 
+// ─── Main page component ────────────────────────────────────────────────────
+
 export default function AdvisoryPage() {
   const { user } = useAuthContext()
 
-  const [loading, setLoading]     = useState(true)
-  const [advisory, setAdvisory]   = useState(null)
-  const [payload, setPayload]     = useState(null)
-  const [error, setError]         = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [advisory, setAdvisory] = useState(null)
+  const [payload,  setPayload]  = useState(null)
+  const [error,    setError]    = useState(null)
 
-  // ── Fetch raw data from Firestore (mirrors useDashboardData lean fetch) ──
   const fetchFirebaseData = useCallback(async () => {
     if (!user?.uid) return null
-
     const uid = user.uid
 
-    const [profileSnap, statementsSnap, wellnessSnap, historySnap] =
+    const [profileSnap, statementsSnap, wellnessSnap, historySnap, emailTxSnap] =
       await Promise.all([
         getDoc(doc(db, 'users', uid)),
         getDocs(query(collection(db, 'users', uid, 'statements'), orderBy('uploaded_at', 'desc'))),
         getDoc(doc(db, 'users', uid, 'wellness', 'current')),
         getDocs(query(collection(db, 'users', uid, 'history', 'net_worth', 'items'), orderBy('month_key', 'asc'))),
+        getDocs(collection(db, 'users', uid, 'emailTransactions')),
       ])
 
-    const profile  = profileSnap.exists() ? profileSnap.data() : null
-    const wellness = wellnessSnap.exists() ? wellnessSnap.data() : null
+    const profile   = profileSnap.exists()  ? profileSnap.data()  : null
+    const wellness  = wellnessSnap.exists()  ? wellnessSnap.data() : null
+    const statements        = statementsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    const netWorthHistory   = historySnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    const emailTransactions = emailTxSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((tx) => !tx.deleted)
 
-    const statements = statementsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-    const netWorthHistory = historySnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-
-    return { profile, statements, wellness, netWorthHistory }
+    return { profile, statements, wellness, netWorthHistory, emailTransactions }
   }, [user?.uid])
 
-  // ── Core pipeline: fetch Firebase → build payload → call Groq ──
   const runAdvisoryPipeline = useCallback(async (force = false) => {
     if (!user?.uid) { setLoading(false); return }
 
-    // Check session cache unless forced
     if (!force) {
       const cached = readSessionCache(user.uid)
       if (cached) {
@@ -427,14 +456,12 @@ export default function AdvisoryPage() {
     setError(null)
 
     try {
-      const raw = await fetchFirebaseData()
+      const raw          = await fetchFirebaseData()
       const builtPayload = buildAdvisoryPayload(raw ?? {})
       setPayload(builtPayload)
 
       const result = await fetchAdvisory(builtPayload)
       setAdvisory(result)
-
-      // Cache for the rest of this browser session (scoped to this user)
       writeSessionCache(user.uid, result, builtPayload)
     } catch (err) {
       console.error('[AdvisoryPage] Error:', err)
@@ -445,18 +472,16 @@ export default function AdvisoryPage() {
     }
   }, [user?.uid, fetchFirebaseData])
 
-  // Auto-run once on mount (uses cache if available)
   useEffect(() => {
     runAdvisoryPipeline(false)
   }, [runAdvisoryPipeline])
 
-  // Manual refresh — clears cache and forces a fresh Groq call
   const handleRefresh = useCallback(() => {
     clearSessionCache()
     runAdvisoryPipeline(true)
   }, [runAdvisoryPipeline])
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <section className="relative isolate min-h-full w-full p-4 sm:p-6 lg:p-8">
@@ -464,7 +489,7 @@ export default function AdvisoryPage() {
       <div className="pointer-events-none fixed -top-20 -right-20 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
       <div className="pointer-events-none fixed bottom-0 left-0 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl" />
 
-      {/* Header bar */}
+      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">Wealth Advisory</h1>
@@ -488,7 +513,7 @@ export default function AdvisoryPage() {
         {loading ? (
           <AdvisorySkeleton />
         ) : !advisory || advisory.headline === 'Unable to generate advisory right now' ? (
-          <EmptyAdvisory onRefresh={handleRefresh} loading={loading} />
+          <NoDataAdvisory onRefresh={handleRefresh} loading={loading} />
         ) : (
           <>
             <HeroCard advisory={advisory} payload={payload} />

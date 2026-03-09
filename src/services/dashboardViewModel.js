@@ -136,17 +136,36 @@ export function deriveRegulatedLabel(statement) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * buildWalletViewModel({ profile, statements, wellness, netWorthHistory })
+ * buildWalletViewModel({ profile, statements, wellness, emailTransactions })
  *
  * Returns a UI-ready object for the Wallet page:
  *   { allocation, totalNetWorth, rows, emptyState }
  */
-export function buildWalletViewModel({ statements, wellness } = {}) {
+export function buildWalletViewModel({ statements, wellness, emailTransactions } = {}) {
   const active = activeStatements(statements)
-  const hasAnyData = active.length > 0
+
+  // ── Email-transaction net cash (approved, non-deleted) ────────────────
+  const validEmailTx = Array.isArray(emailTransactions)
+    ? emailTransactions.filter((tx) => !tx.deleted)
+    : []
+  let emailNetCash = 0
+  for (const tx of validEmailTx) {
+    emailNetCash += safeNumber(tx.amount)
+  }
+
+  const hasAnyData =
+    active.length > 0 ||
+    validEmailTx.length > 0 ||
+    safeNumber(wellness?.key_metrics?.net_worth) > 0
 
   // ── Asset totals ──────────────────────────────────────────────────────
   const totals = sumAssetBreakdown(statements)
+
+  // Email transactions contribute to the cash bucket
+  if (emailNetCash !== 0) {
+    totals.cash += emailNetCash
+  }
+
   const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0)
 
   // Use wellness net_worth if available, otherwise sum from breakdowns
@@ -179,6 +198,19 @@ export function buildWalletViewModel({ statements, wellness } = {}) {
     }
   })
 
+  // Add a summary row for email transactions if any exist
+  if (validEmailTx.length > 0 && emailNetCash !== 0) {
+    const pct = totalNetWorth > 0 ? Math.round((Math.abs(emailNetCash) / totalNetWorth) * 100) : 0
+    rows.push({
+      asset: `Email Transactions (${validEmailTx.length})`,
+      platform: 'Gmail',
+      value: formatCurrencySGD(emailNetCash),
+      portfolio: `${pct}%`,
+      riskLabel: 'Core',
+      regulated: '✅ MAS',
+    })
+  }
+
   // ── Empty state ───────────────────────────────────────────────────────
   const emptyState = {
     hasAnyData,
@@ -209,7 +241,7 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
   const monthlyExpenses = safeNumber(profile?.monthly_expenses)
 
   // ── Budget ────────────────────────────────────────────────────────────
-  const monthlyBudget = monthlyExpenses || 0
+  const monthlyBudget = safeNumber(profile?.monthly_budget) || monthlyExpenses || 0
 
   // Spent this month: sum total_debits from current-month statements,
   // falling back to profile.monthly_expenses
@@ -441,4 +473,126 @@ function formatRelativeDate(dateStr) {
   } catch {
     return '—'
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. TRANSACTIONS VIEW MODEL (unified: Source B + Source C)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generate a stable fingerprint string for a transaction.
+ * Used to remember user-excluded rows so re-imports don't resurface them.
+ */
+export function txFingerprint(tx) {
+  const d = (tx.date ?? '').trim()
+  const desc = (tx.description ?? '').trim().toLowerCase()
+  const amt = Math.abs(safeNumber(tx.amount)).toFixed(2)
+  return `${d}|${desc}|${amt}`
+}
+
+/**
+ * buildTransactionsViewModel({ statements, emailTransactions, excludedFingerprints })
+ *
+ * Merges statement transactions (Source B) and email transactions (Source C)
+ * into a unified, sorted list with source badges.
+ * Rows whose fingerprint is in excludedFingerprints are marked excluded.
+ *
+ * Returns:
+ *   { transactions, summary: { totalCount, totalInflow, totalOutflow }, emptyState }
+ */
+export function buildTransactionsViewModel({ statements, emailTransactions, excludedFingerprints } = {}) {
+  const excludedSet = new Set(Array.isArray(excludedFingerprints) ? excludedFingerprints : [])
+  const active = activeStatements(statements)
+  const allTx = []
+
+  // Source B: statement transactions
+  for (const stmt of active) {
+    const txRows = stmt.transactions ?? stmt.parsed_data?.transactions ?? []
+    if (!Array.isArray(txRows)) continue
+
+    for (const tx of txRows) {
+      const amt = safeNumber(tx.amount)
+      const dir = (tx.direction ?? 'debit').toLowerCase()
+      const signedAmt = (dir === 'credit' || dir === 'in') ? Math.abs(amt) : -Math.abs(amt)
+
+      allTx.push({
+        id:          tx.id ?? tx.row_id ?? undefined,
+        source:      'statement',
+        sourceLabel: 'Statement',
+        description: tx.description ?? tx.source ?? 'Unknown',
+        merchant:    tx.merchant ?? stmt.platform ?? '—',
+        date:        tx.date ?? '—',
+        time:        tx.time ?? '—',
+        category:    tx.category ?? 'uncategorised',
+        direction:   dir === 'credit' || dir === 'in' ? 'credit' : 'debit',
+        amount:      signedAmt,
+        posted:      tx.posted ?? formatRelativeDate(tx.date),
+        statementId: stmt.id,
+        _raw:        tx,
+      })
+    }
+  }
+
+  // Source C: email transactions (approved + pending, exclude deleted)
+  const emailTxs = Array.isArray(emailTransactions) ? emailTransactions : []
+  for (const tx of emailTxs) {
+    if (tx.deleted) continue
+    const amt = safeNumber(tx.amount)
+
+    allTx.push({
+      id:          tx.id,
+      source:      'email',
+      sourceLabel: 'Email',
+      description: tx.description ?? tx.source ?? 'Unknown',
+      merchant:    tx.merchant ?? '—',
+      date:        tx.date ?? '—',
+      time:        tx.time ?? '—',
+      category:    tx.category ?? 'uncategorised',
+      direction:   (tx.direction ?? 'debit').toLowerCase(),
+      amount:      amt,
+      posted:      formatRelativeDate(tx.date),
+      status:      tx.status,
+      edited:      tx.edited ?? false,
+      emailId:     tx.emailId,
+      _raw:        tx,
+    })
+  }
+
+  // Stamp each row with its fingerprint + excluded flag
+  for (const tx of allTx) {
+    tx._fp = txFingerprint(tx)
+    tx.excluded = excludedSet.has(tx._fp)
+  }
+
+  // Sort by date descending, then time descending
+  allTx.sort((a, b) => {
+    const dateCmp = (b.date || '').localeCompare(a.date || '')
+    if (dateCmp !== 0) return dateCmp
+    return (b.time || '').localeCompare(a.time || '')
+  })
+
+  // Summary (only from non-excluded rows)
+  const visible = allTx.filter((tx) => !tx.excluded)
+  let totalInflow = 0
+  let totalOutflow = 0
+  for (const tx of visible) {
+    if (tx.amount >= 0) totalInflow += tx.amount
+    else totalOutflow += Math.abs(tx.amount)
+  }
+
+  const summary = {
+    totalCount: allTx.length,
+    totalInflow: formatCurrencySGD(totalInflow),
+    totalOutflow: formatCurrencySGD(totalOutflow),
+  }
+
+  const hasAnyData = allTx.length > 0
+  const emptyState = {
+    hasAnyData,
+    message: hasAnyData
+      ? ''
+      : 'No transactions yet. Upload a statement or link Gmail to see your transaction history.',
+  }
+
+  return { transactions: allTx, summary, emptyState }
 }
