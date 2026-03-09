@@ -12,7 +12,10 @@ const NAV_SECTIONS = [
   { id: "overview",          label: "Overview",            icon: BookOpen },
   { id: "the-problem",       label: "The Problem",         icon: Lightbulb },
   { id: "our-solution",      label: "Our Solution",        icon: CheckCircle },
+  { id: "ingestion-channels",label: "Ingestion Channels",  icon: Upload },
   { id: "features",          label: "Features",            icon: Sparkles },
+  { id: "gmail-sync",        label: "Gmail Sync",          icon: Mail },
+  { id: "data-sources",      label: "Data Sources",        icon: BarChart3 },
   { id: "architecture",      label: "Architecture",        icon: Layers },
   { id: "firebase-security", label: "Firebase",            icon: ShieldCheck },
   { id: "data-model",        label: "Data Model",          icon: Building2 },
@@ -86,7 +89,7 @@ function Card({ children, className = "", dk }) {
 // Code blocks always stay dark — standard docs convention
 function CodeBlock({ children }) {
   return (
-    <pre className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900 p-4 text-xs leading-relaxed text-teal-300">
+    <pre className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900 p-3 sm:p-4 text-[11px] sm:text-xs leading-relaxed text-teal-300">
       <code>{children}</code>
     </pre>
   );
@@ -95,6 +98,7 @@ function CodeBlock({ children }) {
 function Table({ headers, rows, dk }) {
   return (
     <Card dk={dk}>
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className={`border-b text-left ${dk ? "border-white/10" : "border-gray-200"}`}>
@@ -125,6 +129,7 @@ function Table({ headers, rows, dk }) {
           ))}
         </tbody>
       </table>
+      </div>
     </Card>
   );
 }
@@ -284,7 +289,7 @@ export default function DocsPage() {
         )}
 
         {/* ── Main content ── */}
-        <main className="min-w-0 flex-1 px-6 py-12 lg:px-12">
+        <main className="min-w-0 flex-1 px-4 sm:px-6 py-8 sm:py-12 lg:px-12">
           <div className="mx-auto max-w-3xl space-y-20">
 
             {/* ── Overview ── */}
@@ -335,19 +340,26 @@ export default function DocsPage() {
                 DeFi Wealth Hub takes a fundamentally different approach —{" "}
                 <strong className={heading}>deliberate, user-controlled ingestion</strong>:
               </p>
-              <CodeBlock>{`┌──────────────┐     ┌────────────────┐     ┌──────────────────┐     ┌────────────────┐
-│  Upload File │────▶│  AI Parsing +  │────▶│  Human Review &  │────▶│  Unified       │
-│  (PDF/CSV)   │     │  Structuring   │     │  Approval        │     │  Dashboard     │
-└──────────────┘     └────────────────┘     └──────────────────┘     └────────────────┘
-                                                                            │
-                                                                            ▼
-                                                                     ┌────────────────┐
-                                                                     │  AI Advisory   │
-                                                                     │  (Groq LLM)    │
-                                                                     └────────────────┘`}</CodeBlock>
+              <CodeBlock>{`         TWO DATA INGESTION CHANNELS
+  ──────────────────────────────────────────────
+
+  Channel 1: Manual Upload       Channel 2: Gmail Email Sync
+  PDF / CSV file                  Google OAuth (gmail.readonly)
+       │                                  │
+       ▼                                  ▼
+  InternVL Vision AI              emailParser.js (client-side)
+  (structured extraction)         (SG bank alert detection)
+       │                                  │
+       ▼                                  ▼
+  Human Review Overlay            Auto-dedup + Save
+  (approve / edit / skip)         (pending → approve/reject)
+       │                                  │
+       └──────────────┬───────────────────┘
+                      ▼
+            Unified Dashboard → AI Advisory (Groq LLM)`}</CodeBlock>
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 {[
-                  { icon: Lock,       text: "No bank credentials required — upload statements on your own terms" },
+                  { icon: Lock,       text: "No bank credentials required — upload statements or connect Gmail on your own terms" },
                   { icon: Users,      text: "Human-in-the-loop — review, edit, or reject every parsed row" },
                   { icon: Wallet,     text: "TradFi + DeFi in one place — bank, broker, crypto, investments unified" },
                   { icon: Brain,      text: "Explainable AI — every insight links back to specific data points" },
@@ -361,6 +373,108 @@ export default function DocsPage() {
               </div>
             </section>
 
+            {/* ── Ingestion Channels ── */}
+            <section id="ingestion-channels" ref={setRef("ingestion-channels")}>
+              <SectionTitle icon={Upload} title="Two Data Ingestion Channels" dk={dk} />
+              <p className="mb-6 text-sm leading-relaxed" style={{ color: muted }}>
+                The core differentiator of DeFi Wealth Hub — users choose how their financial data enters the system.
+                Both channels feed into the <strong className={heading}>same unified dashboard, wellness scoring, and AI advisory engine</strong>.
+              </p>
+
+              {/* Channel 1 */}
+              <Card className="mb-4" dk={dk}>
+                <div className="flex items-start gap-4">
+                  <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
+                    <Upload className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`mb-2 font-semibold ${heading}`}>Channel 1: Manual Upload + InternVL AI Parse</p>
+                    <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
+                      Upload any bank statement, broker report, crypto exchange CSV, or expense summary — our <strong className={heading}>InternVL vision-language model</strong> extracts every row.
+                    </p>
+                    <CodeBlock>{`PDF/CSV Upload → InternVL AI Parse → Human Review Overlay → Firestore Write → Auto-Recompute`}</CodeBlock>
+                    <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <tbody className={`divide-y ${dk ? "divide-white/5" : "divide-gray-100"}`}>
+                        {[
+                          ["File Upload", "User selects PDF or CSV, picks source type (bank, crypto, broker, investment, expenses)"],
+                          ["InternVL Parse", "Vision-language model extracts rows — date, description, amount, currency, category, direction"],
+                          ["Human Review", "Slide-in overlay: approve, edit, or skip each row before it's saved"],
+                          ["Firestore Write", "Approved rows → /users/{uid}/statements/{id}/transactions/{txId}"],
+                          ["Auto-Recompute", "Wellness scores, pillar scores, and net worth history update immediately"],
+                        ].map(([step, desc]) => (
+                          <tr key={step}>
+                            <td className="py-2 pr-3 font-medium text-teal-500 text-xs whitespace-nowrap">{step}</td>
+                            <td className="py-2 text-xs" style={{ color: muted }}>{desc}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                    <p className="mt-3 rounded-lg border border-teal-500/20 bg-teal-500/10 px-3 py-2 text-xs text-teal-500">
+                      💡 Works with <strong>any</strong> financial document — not limited to specific banks. Human review ensures accuracy.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Channel 2 */}
+              <Card className="mb-4" dk={dk}>
+                <div className="flex items-start gap-4">
+                  <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`mb-2 font-semibold ${heading}`}>Channel 2: Gmail Email Sync + Auto-Parse</p>
+                    <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
+                      Connect Gmail to <strong className={heading}>automatically import transaction alert emails</strong> from Singapore banks — zero manual effort.
+                    </p>
+                    <CodeBlock>{`Link Gmail → OAuth (gmail.readonly) → Query Emails → emailParser.js → Dedup → Firestore → Review`}</CodeBlock>
+                    <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <tbody className={`divide-y ${dk ? "divide-white/5" : "divide-gray-100"}`}>
+                        {[
+                          ["OAuth Connect", "Google OAuth popup (gmail.readonly scope), token stored in-memory"],
+                          ["Email Query", "Searches for transaction/payment/receipt keywords from last 7 days"],
+                          ["Client Parse", "emailParser.js detects DBS, OCBC, UOB, MariBank, GrabPay, PayNow"],
+                          ["Dedup + Save", "Gmail message ID prevents duplicates, saved as status: 'pending'"],
+                          ["Review", "Budgeting tab → approve, reject, or inline-edit each transaction"],
+                          ["Auto-Poll", "Checks for new emails every 5 minutes automatically"],
+                        ].map(([step, desc]) => (
+                          <tr key={step}>
+                            <td className="py-2 pr-3 font-medium text-teal-500 text-xs whitespace-nowrap">{step}</td>
+                            <td className="py-2 text-xs" style={{ color: muted }}>{desc}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                    <p className="mt-3 rounded-lg border border-teal-500/20 bg-teal-500/10 px-3 py-2 text-xs text-teal-500">
+                      ⚡ Fully automated daily transaction capture for major Singapore banks.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* How both feed dashboard */}
+              <Card dk={dk}>
+                <p className={`mb-3 font-semibold ${heading}`}>How Both Channels Feed the Dashboard</p>
+                <ul className="space-y-1 text-sm" style={{ color: muted }}>
+                  {[
+                    "Budget calculations aggregate transactions from statements (Ch.1) AND approved email tx (Ch.2)",
+                    "Wellness scoring considers net worth from statements AND net cash flow from email transactions",
+                    "AI Advisory receives data from both channels via advisoryPayloadBuilder.js",
+                    "Privacy Hub shows both sources separately with independent delete controls",
+                  ].map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </section>
+
             {/* ── Features ── */}
             <section id="features" ref={setRef("features")}>
               <SectionTitle icon={Sparkles} title="Features" dk={dk} />
@@ -371,11 +485,12 @@ export default function DocsPage() {
                   <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
                     <LayoutDashboard className="h-5 w-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className={`mb-3 font-semibold ${heading}`}>📊 Unified Multi-Asset Dashboard</p>
                     <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
                       A three-tab command centre for your entire financial life. All data is live from Firestore — every upload refreshes your numbers in real time.
                     </p>
+                    <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className={`border-b text-left ${dk ? "border-white/10" : "border-gray-200"}`}>
@@ -396,6 +511,7 @@ export default function DocsPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -406,7 +522,7 @@ export default function DocsPage() {
                   <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
                     <Brain className="h-5 w-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className={`mb-2 font-semibold ${heading}`}>🧠 AI-Powered Wealth Advisory</p>
                     <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
                       A dedicated <code className="text-teal-500">/advisory</code> page powered by{" "}
@@ -443,7 +559,7 @@ export default function DocsPage() {
                   <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
                     <Upload className="h-5 w-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className={`mb-2 font-semibold ${heading}`}>📑 Statement Ingestion Pipeline</p>
                     <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
                       A robust, multi-step document workflow that keeps the human in control at every stage.
@@ -467,6 +583,10 @@ export default function DocsPage() {
                         </li>
                       ))}
                     </ul>
+                    <p className="mt-3 rounded-lg border border-teal-500/20 bg-teal-500/10 px-3 py-2 text-xs text-teal-500">
+                      📄 Deep-dive: see <strong>Backend Design Documents</strong> in the <code className="text-teal-400">LZ DOCS/</code> folder —
+                      covers the full parsing pipeline (CSV/PDF/Image → Textract → InternVL), API endpoints, job lifecycle, classification logic, and human review UX contracts.
+                    </p>
                   </div>
                 </div>
               </Card>
@@ -477,7 +597,7 @@ export default function DocsPage() {
                   <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
                     <TrendingUp className="h-5 w-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className={`mb-2 font-semibold ${heading}`}>💰 Budgeting & Expense Tracking</p>
                     <ul className="space-y-1 text-sm" style={{ color: muted }}>
                       {[
@@ -505,7 +625,7 @@ export default function DocsPage() {
                   <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${dk ? "bg-white/5 text-teal-300" : "bg-teal-50 text-teal-600"}`}>
                     <PieChart className="h-5 w-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className={`mb-2 font-semibold ${heading}`}>👛 Wallet & Asset Allocation</p>
                     <ul className="space-y-1 text-sm" style={{ color: muted }}>
                       {[
@@ -702,6 +822,30 @@ User links Gmail → OAuth (gmail.readonly) → syncGmailTransactions()
 
 Market Data Flow:
 marketDataService.getYfPrice(ticker) → yfinance API → 5-min cache → price`}</CodeBlock>
+
+              <Card className="mt-6" dk={dk}>
+                <p className={`mb-2 font-semibold ${heading}`}>📄 Backend Design Documents</p>
+                <p className="mb-3 text-sm leading-relaxed" style={{ color: muted }}>
+                  The InternVL / QwenVL parsing backend is documented in detail in the <code className="text-teal-500">LZ DOCS/</code> folder. These cover the full ingestion pipeline architecture, API contracts, and human review UX design:
+                </p>
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody className={`divide-y ${dk ? "divide-white/5" : "divide-gray-100"}`}>
+                    {[
+                      ["BACKEND_DESIGN_DOCUMENT.md", "Core backend architecture — API endpoints (upload, parse, job lifecycle, row retrieval), parsing pipeline (CSV/XLSX deterministic + PDF/Image hybrid with Textract + InternVL), SQLite persistence, classification transparency"],
+                      ["Software Design Document README.md", "Full system design — Firestore data model (jobs, documents, extracted rows, review events), hybrid parsing pipeline, human-in-the-loop review UX, API contracts, security baseline"],
+                      ["Software Design Document README - API First.md", "API-first architecture — phased build strategy (mock → Python service → Firebase), JSON contracts, review mutation endpoints, Gradio vs FastAPI recommendations"],
+                      ["HOW TO USE BACKEND", "Quick-start guide for the backend test UI at the deployed API docs endpoint"],
+                    ].map(([doc, desc]) => (
+                      <tr key={doc}>
+                        <td className="py-2 pr-3 font-mono text-teal-500 text-xs sm:whitespace-nowrap">{doc}</td>
+                        <td className="py-2 text-xs" style={{ color: muted }}>{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </Card>
             </section>
 
             {/* ── Firebase Security ── */}
@@ -1146,6 +1290,7 @@ service cloud.firestore {
             <section id="routes" ref={setRef("routes")}>
               <SectionTitle icon={Map} title="Pages & Routes" dk={dk} />
               <Card dk={dk}>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className={`border-b text-left ${dk ? "border-white/10" : "border-gray-200"}`}>
@@ -1168,6 +1313,7 @@ service cloud.firestore {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </Card>
             </section>
 

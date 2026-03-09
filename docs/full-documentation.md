@@ -39,26 +39,88 @@ Personal finance data is **fragmented**. Users juggle bank statements, crypto ex
 
 ## ✅ Our Solution
 
-DeFi Wealth Hub takes a fundamentally different approach — **deliberate, user-controlled ingestion**:
+DeFi Wealth Hub takes a fundamentally different approach — **deliberate, user-controlled ingestion** through **two distinct data channels**:
 
 ```
-┌──────────────┐     ┌────────────────┐     ┌──────────────────┐     ┌────────────────┐
-│  Upload File │────▶│  AI Parsing +  │────▶│  Human Review &  │────▶│  Unified       │
-│  (PDF/CSV)   │     │  Structuring   │     │  Approval        │     │  Dashboard     │
-└──────────────┘     └────────────────┘     └──────────────────┘     └────────────────┘
-                                                                            │
-                                                                            ▼
-                                                                     ┌────────────────┐
-                                                                     │  AI Advisory   │
-                                                                     │  (Groq LLM)    │
-                                                                     └────────────────┘
+              ┌─────────────────────────────────────────────────────────┐
+              │              TWO DATA INGESTION CHANNELS                │
+              └─────────────────────────────────────────────────────────┘
+
+  Channel 1: Manual Upload                Channel 2: Gmail Email Sync
+  ─────────────────────────               ─────────────────────────────
+  PDF / CSV file upload                   Google OAuth (gmail.readonly)
+         │                                         │
+         ▼                                         ▼
+  InternVL Vision AI                      emailParser.js (client-side)
+  (extracts structured data)              (detects SG bank alerts)
+         │                                         │
+         ▼                                         ▼
+  Human Review Overlay                    Auto-dedup against Firestore
+  (approve / edit / skip rows)            (Gmail message ID)
+         │                                         │
+         ▼                                         ▼
+  /statements/{id}/transactions/          /emailTransactions/{txId}
+         │                                         │
+         └────────────────┬────────────────────────┘
+                          │
+                          ▼
+               ┌──────────────────┐     ┌────────────────┐
+               │  Unified         │────▶│  AI Advisory   │
+               │  Dashboard       │     │  (Groq LLM)    │
+               └──────────────────┘     └────────────────┘
 ```
 
-- **No bank credentials required** — you upload statements on your own terms
+- **No bank credentials required** — you upload statements or connect Gmail on your own terms
 - **Human-in-the-loop** — review, edit, or reject every parsed row before it touches your analytics
 - **TradFi + DeFi in one place** — bank, broker, crypto, and investment statements unified
 - **Explainable AI** — every insight links back to specific data points, not black-box guesses
 - **Privacy by design** — you always see exactly what data is stored and how it's used
+
+---
+
+## 📥 Two Data Ingestion Channels
+
+The core differentiator of DeFi Wealth Hub is its **dual-channel ingestion** — users choose how their financial data enters the system. Both channels feed into the same unified dashboard, wellness scoring, and AI advisory engine.
+
+### Channel 1: Manual Upload + InternVL AI Parse
+
+> Upload any bank statement, broker report, crypto exchange CSV, or expense summary — our vision AI extracts every row.
+
+| Step | What Happens |
+| :--- | :--- |
+| **1. File Upload** | User selects PDF or CSV and picks source type (bank, crypto, broker, investment, expenses) |
+| **2. InternVL Parse** | File is sent to the InternVL vision-language model backend (`{VITE_PIPELINE_API_BASE_URL}/parse`) which extracts structured rows — date, description, amount, currency, category, direction |
+| **3. Human Review** | Slide-in overlay table lets the user **approve, edit, or skip** each row. Editable fields: date, description, amount, currency, category, direction, asset |
+| **4. Firestore Write** | Approved rows are saved to `/users/{uid}/statements/{id}/transactions/{txId}` subcollection |
+| **5. Auto-Recompute** | Wellness scores, 4 pillar scores, and net worth history update immediately |
+
+**Key strength:** Works with **any** financial document — not limited to specific banks. The human review step ensures accuracy even when the AI misreads a row.
+
+> 📄 For the full backend parsing pipeline design (Textract + InternVL hybrid, classification logic, job lifecycle, API endpoints), see the [`LZ DOCS/`](../LZ%20DOCS/) folder.
+
+### Channel 2: Gmail Email Sync + Auto-Parse
+
+> Connect your Gmail to automatically import transaction alert emails from Singapore banks — zero manual effort.
+
+| Step | What Happens |
+| :--- | :--- |
+| **1. OAuth Connect** | User clicks "Link Gmail" → Google OAuth popup (`gmail.readonly` scope) → access token stored in-memory |
+| **2. Email Query** | Queries Gmail for transaction keywords (`transaction`, `payment`, `receipt`, `debit`, `credit`, `transfer`) from the last 7 days |
+| **3. Client-Side Parse** | `emailParser.js` detects sender bank (DBS, OCBC, UOB, MariBank, GrabPay, PayNow) and extracts amount, merchant, category, direction from subject + body |
+| **4. Dedup + Save** | Gmail message ID prevents duplicates. New transactions saved to `/users/{uid}/emailTransactions/{txId}` with `status: 'pending'` |
+| **5. Review** | Pending transactions appear in the Budgeting tab → user can approve, reject, or inline-edit each one |
+| **6. Auto-Poll** | Every 5 minutes (if token valid), new emails are checked automatically |
+
+**Key strength:** **Fully automated** daily transaction capture. Supports the major Singapore banks. Approved email transactions feed into budget calculations and wellness scoring.
+
+### How Both Channels Feed the Dashboard
+
+Both channels write to Firestore under the user's document tree. The dashboard reads from **both** sources:
+
+- **Budget calculations** aggregate transactions from statements (Channel 1) **and** approved email transactions (Channel 2)
+- **Wellness scoring** considers net worth from statements **and** net cash flow from email transactions
+- **AI Advisory** receives data from both channels via `advisoryPayloadBuilder.js`
+- **Privacy Hub** shows both sources separately with independent delete controls
 
 ---
 
@@ -125,6 +187,15 @@ A robust, multi-step document workflow that keeps the human in control at every 
 - **Review overlay** — a slide-in modal (rendered via React Portal to avoid z-index issues) lets you approve, edit, or skip each parsed row
 - **Firestore write** — approved rows become documents in `/users/{uid}/statements/{id}/transactions/` subcollection
 - **Auto-recompute** — wellness scores, pillar scores, and net worth history update immediately after save
+
+> **📄 Backend Design Documents:** The full InternVL / QwenVL parsing backend is documented in detail in the [`LZ DOCS/`](../LZ%20DOCS/) folder:
+>
+> | Document | Covers |
+> | :--- | :--- |
+> | [`BACKEND_DESIGN_DOCUMENT.md`](../LZ%20DOCS/BACKEND_DESIGN_DOCUMENT.md) | Core backend architecture — API endpoints (upload, parse, job lifecycle, row retrieval), parsing pipeline (CSV/XLSX deterministic + PDF/Image hybrid with Textract + InternVL), SQLite persistence, classification transparency |
+> | [`Software Design Document README.md`](../LZ%20DOCS/Software%20Design%20Document%20README.md) | Full system design — Firestore data model (jobs, documents, extracted rows, review events), hybrid parsing pipeline, human-in-the-loop review UX, API contracts, security baseline |
+> | [`Software Design Document README - API First.md`](../LZ%20DOCS/Software%20Design%20Document%20README%20-%20API%20First.md) | API-first architecture — phased build strategy (mock → Python service → Firebase), JSON contracts, review mutation endpoints |
+> | [`HOW TO USE BACKEND`](../LZ%20DOCS/HOW%20TO%20USE%20BACKEND) | Quick-start guide for the backend test UI at the deployed API endpoint |
 
 ### 💰 Budgeting & Expense Tracking
 
