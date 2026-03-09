@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import { PiggyBank, Upload } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { PiggyBank, Upload, Pencil, Check, X, Trash2, RefreshCw, Mail, Unlink } from 'lucide-react'
 import StatCard from '../../../components/ui/StatCard.jsx'
 import CategoryBadge from '../../../components/ui/CategoryBadge.jsx'
 import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
+import useGmailLink from '../../../hooks/useGmailLink.js'
+import useEmailTransactions from '../../../hooks/useEmailTransactions.js'
+import { deleteEmailTransaction } from '../../../services/emailTransactionService.js'
+import { useAuthContext } from '../../../hooks/useAuthContext.js'
 
 const CARD_CLASS = 'bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl p-5'
 
@@ -52,12 +56,16 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
     emergencySavingsTarget = 0,
     emergencySavingsCurrent = 0,
     emergencySavingsPct = 0,
-    transactionSummary = {},
     recentTransactions: vmTransactions = [],
     emptyState,
   } = viewModel
 
   const hasData = emptyState?.hasAnyData !== false
+
+  // Gmail integration hooks
+  const { user } = useAuthContext()
+  const gmail = useGmailLink()
+  const emailTx = useEmailTransactions({ enabled: gmail.gmailLinked })
 
   const [budgetInput, setBudgetInput] = useState('')
   const [budget, setBudget] = useState(vmBudget || 0)
@@ -84,7 +92,94 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
   }
 
   const emergencyGap = Math.max(0, emergencySavingsTarget - emergencySavingsCurrent)
-  const filteredTransactions = filterTransactions(transactions, txFilter)
+
+  // Merge email transactions directly into the main transaction list
+  const mergedTransactions = useMemo(() => {
+    const emailTxs = (emailTx.transactions || []).map((tx) => ({
+      id: tx.id,
+      source: tx.source,
+      merchant: tx.merchant,
+      date: tx.date,
+      time: tx.time,
+      category: tx.category,
+      amount: tx.amount,
+      posted: 'Email',
+      _isEmailTx: true,
+    }))
+    return [...transactions, ...emailTxs].sort((a, b) => {
+      const dateCmp = (b.date || '').localeCompare(a.date || '')
+      if (dateCmp !== 0) return dateCmp
+      return (b.time || '').localeCompare(a.time || '')
+    })
+  }, [transactions, emailTx.transactions])
+
+  const filteredTransactions = filterTransactions(mergedTransactions, txFilter)
+
+  // Live summary stats computed from the actual displayed transactions
+  const liveSummary = useMemo(() => {
+    const count = filteredTransactions.length
+    let inflow = 0
+    let outflow = 0
+    for (const tx of filteredTransactions) {
+      if (tx.amount >= 0) inflow += tx.amount
+      else outflow += Math.abs(tx.amount)
+    }
+    return {
+      totalCount: count,
+      totalInflow: `S$${fmt(inflow)}`,
+      totalOutflow: `S$${fmt(outflow)}`,
+    }
+  }, [filteredTransactions])
+
+  // Inline editing for main transaction table
+  const [editingTxId, setEditingTxId] = useState(null)
+  const [editingValues, setEditingValues] = useState({})
+
+  const startEditing = (tx) => {
+    setEditingTxId(tx.id)
+    setEditingValues({
+      source: tx.source || '',
+      merchant: tx.merchant || '',
+      date: tx.date || '',
+      time: tx.time || '',
+      amount: tx.amount ?? 0,
+    })
+  }
+
+  const cancelEditing = () => {
+    setEditingTxId(null)
+    setEditingValues({})
+  }
+
+  const saveEditing = (tx) => {
+    if (tx._isEmailTx) {
+      emailTx.edit(tx.id, {
+        source: editingValues.source,
+        merchant: editingValues.merchant,
+        date: editingValues.date,
+        time: editingValues.time,
+        amount: parseFloat(editingValues.amount) || 0,
+      })
+    } else {
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === tx.id
+            ? { ...t, source: editingValues.source, merchant: editingValues.merchant, date: editingValues.date, time: editingValues.time, amount: parseFloat(editingValues.amount) || 0 }
+            : t,
+        ),
+      )
+    }
+    setEditingTxId(null)
+    setEditingValues({})
+  }
+
+  const handleDelete = useCallback(async (tx) => {
+    if (tx._isEmailTx && user?.uid) {
+      await deleteEmailTransaction(user.uid, tx.id)
+    } else {
+      setTransactions((prev) => prev.filter((t) => t.id !== tx.id))
+    }
+  }, [user?.uid])
 
   // Derive category spending from filtered transactions (outflows only)
   const CATEGORY_COLORS = {
@@ -224,13 +319,48 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
         </div>
       </div>
 
-      {/* ── Transactions header ───────────────────── */}
-      <div className="px-1 mt-8 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Transactions</h2>
-          <span className="mt-1 text-sm text-slate-600">Transaction history and current spending</span>
+      {/* ── Transactions header with Gmail controls ─── */}
+      <div className="px-1 mt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Transactions</h2>
+            <span className="mt-1 text-sm text-slate-600">Transaction history and current spending</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {gmail.gmailLinked ? (
+              <>
+                <button
+                  onClick={emailTx.sync}
+                  disabled={emailTx.syncing}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${emailTx.syncing ? 'animate-spin' : ''}`} />
+                  {emailTx.syncing ? 'Syncing…' : 'Sync Gmail'}
+                </button>
+                <button
+                  onClick={gmail.unlinkGmail}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 transition"
+                  title={`Linked: ${gmail.gmailEmail || 'Gmail'}`}
+                >
+                  <Unlink className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={gmail.linkGmail}
+                disabled={gmail.linking}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
+              >
+                <Mail className="h-4 w-4" />
+                {gmail.linking ? 'Linking…' : 'Link Gmail'}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+        {gmail.gmailLinked && gmail.gmailEmail && (
+          <p className="text-xs text-gray-400 mt-1">Connected to {gmail.gmailEmail}</p>
+        )}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 mt-3 w-fit">
           {TX_FILTERS.map((f) => (
             <button
               key={f}
@@ -251,26 +381,20 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
       <div className="grid grid-cols-3 gap-4">
         <StatCard
           title="Total Transactions"
-          value={transactionSummary.totalCount ?? '—'}
+          value={liveSummary.totalCount}
           valueColor="text-teal-500"
-          changeText={transactionSummary.totalCountChange ?? ''}
-          changeColor="text-green-500"
-          tooltip="Count of all debit and credit entries from your uploaded statements within the selected time filter."
+          tooltip="Count of all debit and credit entries within the selected time filter."
         />
         <StatCard
           title="Total Inflow"
-          value={transactionSummary.totalInflow ?? '—'}
+          value={liveSummary.totalInflow}
           valueColor="text-teal-500"
-          changeText={transactionSummary.totalInflowChange ?? ''}
-          changeColor="text-green-500"
           tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds, and other deposits within the selected period."
         />
         <StatCard
           title="Total Outflow"
-          value={transactionSummary.totalOutflow ?? '—'}
+          value={liveSummary.totalOutflow}
           valueColor="text-teal-500"
-          changeText={transactionSummary.totalOutflowChange ?? ''}
-          changeColor="text-green-500"
           tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out, and withdrawals within the selected period."
         />
       </div>
@@ -282,47 +406,133 @@ export default function BudgetingTab({ viewModel = {}, onUploadClick }) {
             <table className="w-full">
               <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-gray-100">
-                  <th className="text-left px-5 py-2 text-xs text-gray-400 font-medium w-[30%]">Source</th>
+                  <th className="text-left px-5 py-2 text-xs text-gray-400 font-medium w-[25%]">Source</th>
                   <th className="text-left px-4 py-2 text-xs text-gray-400 font-medium">Merchant</th>
                   <th className="text-left px-4 py-2 text-xs text-gray-400 font-medium">Date</th>
                   <th className="text-left px-4 py-2 text-xs text-gray-400 font-medium">Time</th>
                   <th className="text-left px-4 py-2 text-xs text-gray-400 font-medium">Category</th>
                   <th className="text-right px-4 py-2 text-xs text-gray-400 font-medium">Posted</th>
-                  <th className="text-right px-5 py-2 text-xs text-gray-400 font-medium">Amount</th>
+                  <th className="text-right px-4 py-2 text-xs text-gray-400 font-medium">Amount</th>
+                  <th className="text-center px-3 py-2 text-xs text-gray-400 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
+                    <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-400">
                       No transactions to display.
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((tx, i) => (
-                    <tr key={tx.id ?? i} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
-                      <td className="px-5 py-3 text-sm text-gray-900 font-medium truncate max-w-0 w-[30%]">
-                        {tx.source}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{tx.merchant}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{tx.date}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{tx.time}</td>
-                      <td className="px-4 py-3">
-                        <CategoryBadge
-                          category={tx.category}
-                          onCategoryChange={(cat) => handleCategoryChange(tx.id ?? i, cat)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-400 text-right whitespace-nowrap">{tx.posted}</td>
-                      <td
-                        className={`px-5 py-3 text-sm font-semibold text-right whitespace-nowrap ${
-                          tx.amount >= 0 ? 'text-teal-500' : 'text-red-500'
-                        }`}
-                      >
-                        {fmtAmt(tx.amount)}
-                      </td>
-                    </tr>
-                  ))
+                  filteredTransactions.map((tx, i) => {
+                    const isEditing = editingTxId === tx.id
+                    const key = tx.id ?? i
+
+                    if (isEditing) {
+                      return (
+                        <tr key={key} className="border-b border-gray-50 bg-blue-50/40">
+                          <td className="px-5 py-2">
+                            <input
+                              value={editingValues.source}
+                              onChange={(e) => setEditingValues((v) => ({ ...v, source: e.target.value }))}
+                              className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editingValues.merchant}
+                              onChange={(e) => setEditingValues((v) => ({ ...v, merchant: e.target.value }))}
+                              className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="date"
+                              value={editingValues.date}
+                              onChange={(e) => setEditingValues((v) => ({ ...v, date: e.target.value }))}
+                              className="bg-white border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editingValues.time}
+                              onChange={(e) => setEditingValues((v) => ({ ...v, time: e.target.value }))}
+                              className="w-20 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <CategoryBadge
+                              category={tx.category}
+                              onCategoryChange={(cat) => handleCategoryChange(tx.id ?? i, cat)}
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-400 text-right whitespace-nowrap">{tx.posted}</td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingValues.amount}
+                              onChange={(e) => setEditingValues((v) => ({ ...v, amount: e.target.value }))}
+                              className="w-24 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => saveEditing(tx)} className="p-1 rounded hover:bg-green-100 text-green-600" title="Save">
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button onClick={cancelEditing} className="p-1 rounded hover:bg-red-100 text-red-500" title="Cancel">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+
+                    return (
+                      <tr key={key} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                        <td className="px-5 py-3 text-sm text-gray-900 font-medium truncate max-w-0 w-[25%]">
+                          {tx.source}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{tx.merchant}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{tx.date}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{tx.time}</td>
+                        <td className="px-4 py-3">
+                          <CategoryBadge
+                            category={tx.category}
+                            onCategoryChange={(cat) => handleCategoryChange(tx.id ?? i, cat)}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-400 text-right whitespace-nowrap">{tx.posted}</td>
+                        <td
+                          className={`px-5 py-3 text-sm font-semibold text-right whitespace-nowrap ${
+                            tx.amount >= 0 ? 'text-teal-500' : 'text-red-500'
+                          }`}
+                        >
+                          {fmtAmt(tx.amount)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => startEditing(tx)}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                              title="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(tx)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
