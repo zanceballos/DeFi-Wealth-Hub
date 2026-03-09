@@ -208,7 +208,7 @@ function SnapshotCards({ payload }) {
         return (
           <div
             key={c.label}
-            className="flex items-center gap-4 rounded-2xl border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur-xl"
+            className="flex items-center gap-4 rounded-2xl border border-white/70 bg-white/80 p-4 sm:p-5 shadow-sm backdrop-blur-xl"
           >
             <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 ${c.color}`}>
               <Icon className="h-5 w-5" />
@@ -320,9 +320,9 @@ function EducationSection({ education }) {
               <button
                 type="button"
                 onClick={() => setOpenIdx(isOpen ? null : idx)}
-                className="flex w-full items-center justify-between p-5 text-left"
+                className="flex w-full items-center justify-between p-4 sm:p-5 text-left gap-2"
               >
-                <span className="text-sm font-semibold text-slate-700">{edu.topic}</span>
+                <span className="text-sm font-semibold text-slate-700 pr-4">{edu.topic}</span>
                 {isOpen
                   ? <ChevronUp className="h-4 w-4 text-slate-400" />
                   : <ChevronDown className="h-4 w-4 text-slate-400" />
@@ -490,9 +490,9 @@ export default function AdvisoryPage() {
       <div className="pointer-events-none fixed bottom-0 left-0 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl" />
 
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Wealth Advisory</h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl lg:text-3xl">Wealth Advisory</h1>
           <p className="mt-0.5 text-sm text-slate-500">
             Personalised AI insights powered by your financial data
           </p>

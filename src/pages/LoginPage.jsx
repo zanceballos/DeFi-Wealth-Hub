@@ -198,7 +198,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition focus:ring-1"
+                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-4 text-base text-white placeholder-slate-500 outline-none transition focus:ring-1"
                   style={{ borderColor: "#1E3A5F" }}
                   onFocus={(e) => {
                     e.target.style.borderColor = "#00C9B1";
@@ -228,7 +228,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-sm text-white placeholder-slate-500 outline-none transition focus:ring-1"
+                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-base text-white placeholder-slate-500 outline-none transition focus:ring-1"
                   style={{ borderColor: "#1E3A5F" }}
                   onFocus={(e) => {
                     e.target.style.borderColor = "#00C9B1";

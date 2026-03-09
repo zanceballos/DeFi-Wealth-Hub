@@ -14,7 +14,7 @@ import { useAuthContext } from "../../../hooks/useAuthContext.js";
 import { useFirestore } from "../../../hooks/useFirestore.js";
 
 const CARD_CLASS =
-  "bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl p-5";
+  "bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-xl p-4 sm:p-5";
 
 const fmt = (n) =>
   Number(n).toLocaleString("en-SG", {
@@ -89,14 +89,12 @@ export default function BudgetingTab({
   const gmail = useGmailLink();
   const emailTx = useEmailTransactions({ enabled: gmail.gmailLinked });
 
-  // ── Budget state — seeded from Firestore profile ──────────────────────
   const [budgetInput, setBudgetInput] = useState("");
   const [budget, setBudget] = useState(
     profile?.monthly_budget ?? profile?.monthly_expenses ?? 0
   );
   const [savingBudget, setSavingBudget] = useState(false);
 
-  // Keep budget in sync if profile loads after mount
   useEffect(() => {
     if (profile?.monthly_budget) {
       setBudget(profile.monthly_budget);
@@ -105,13 +103,10 @@ export default function BudgetingTab({
     }
   }, [profile?.monthly_budget, profile?.monthly_expenses]);
 
-  // Spending = sum of debit transactions from current month statements
-  // Falls back to spentThisMonth from viewModel
   const spent = spentThisMonth;
   const remaining = vmRemaining ?? Math.max(0, budget - spent);
   const spentPct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
 
-  // Save budget to Firestore under monthly_budget field
   const handleSaveBudget = async () => {
     const val = parseFloat(budgetInput);
     if (isNaN(val) || val <= 0) return;
@@ -128,12 +123,8 @@ export default function BudgetingTab({
     }
   };
 
-  const emergencyGap = Math.max(
-    0,
-    emergencySavingsTarget - emergencySavingsCurrent
-  );
+  const emergencyGap = Math.max(0, emergencySavingsTarget - emergencySavingsCurrent);
 
-  // Inline edit handler for TransactionsTable
   const handleEdit = useCallback(
     async (tx, updates) => {
       if (!user?.uid) return;
@@ -158,15 +149,12 @@ export default function BudgetingTab({
     [user?.uid, emailTx]
   );
 
-  // Exclude a transaction from analytics (persist fingerprint to Firestore)
   const handleExclude = useCallback(
     async (tx) => {
       if (!user?.uid) return;
       const fp = tx._fp ?? txFingerprint(tx);
       const next = [...excludedFingerprints, fp];
-      // Optimistic local update
       updateExcludedFingerprints?.(next);
-      // Persist to Firestore
       try {
         await updateDoc(doc(db, 'users', user.uid), { excluded_tx_fingerprints: next });
       } catch (err) {
@@ -176,7 +164,6 @@ export default function BudgetingTab({
     [user?.uid, excludedFingerprints, updateExcludedFingerprints],
   );
 
-  // Restore a previously excluded transaction
   const handleRestore = useCallback(
     async (tx) => {
       if (!user?.uid) return;
@@ -192,7 +179,6 @@ export default function BudgetingTab({
     [user?.uid, excludedFingerprints, updateExcludedFingerprints],
   );
 
-  // Live summary from unified transactions (exclude excluded rows)
   const liveSummary = useMemo(() => {
     const visible = transactions.filter((tx) => !tx.excluded);
     let inflow = 0;
@@ -208,27 +194,23 @@ export default function BudgetingTab({
     };
   }, [transactions]);
 
-  // Derive category spending from all transactions (outflows only, exclude excluded)
   const derivedCategorySpending = useMemo(() => {
     const source = transactions.length > 0 ? transactions : vmTransactions || [];
     const totals = {};
-    source.forEach(
-      (tx) => {
-        if (tx.excluded) return;
-        if (tx.amount < 0) {
-          const cat = tx.category || "Unknown";
-          totals[cat] = (totals[cat] || 0) + Math.abs(tx.amount);
-        }
+    source.forEach((tx) => {
+      if (tx.excluded) return;
+      if (tx.amount < 0) {
+        const cat = tx.category || "Unknown";
+        totals[cat] = (totals[cat] || 0) + Math.abs(tx.amount);
       }
-    );
+    });
     const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
     return Object.entries(totals)
       .sort((a, b) => b[1] - a[1])
       .map(([category, amount]) => ({
         category,
         amount,
-        percentage:
-          grandTotal > 0 ? Math.round((amount / grandTotal) * 100) : 0,
+        percentage: grandTotal > 0 ? Math.round((amount / grandTotal) * 100) : 0,
         color: CATEGORY_COLORS[category] ?? "#9ca3af",
       }));
   }, [transactions, vmTransactions]);
@@ -237,7 +219,7 @@ export default function BudgetingTab({
   if (!hasData) {
     return (
       <div className="space-y-8">
-        <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white/60 px-8 py-14 text-center backdrop-blur-sm">
+        <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-10 sm:px-8 sm:py-14 text-center backdrop-blur-sm">
           <div className="mx-auto max-w-md">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary/10">
               <PiggyBank className="h-8 w-8 text-brand-primary" />
@@ -250,7 +232,7 @@ export default function BudgetingTab({
               snapshot, or link your Gmail to automatically pull transaction
               alert emails. You can use both!
             </p>
-            <div className="mt-6 flex items-center justify-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               {onUploadClick && (
                 <button
                   type="button"
@@ -268,9 +250,7 @@ export default function BudgetingTab({
                   disabled={emailTx.syncing}
                   className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
                 >
-                  <RefreshCw
-                    className={`h-4 w-4 ${emailTx.syncing ? "animate-spin" : ""}`}
-                  />
+                  <RefreshCw className={`h-4 w-4 ${emailTx.syncing ? "animate-spin" : ""}`} />
                   {emailTx.syncing ? "Syncing…" : "Sync Gmail now"}
                 </button>
               ) : (
@@ -320,7 +300,7 @@ export default function BudgetingTab({
     <div className="space-y-6">
       {/* ── Budget header ─────────────────────────── */}
       <div className="px-1">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        <h2 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
           Budget
         </h2>
         <span className="mt-1 text-sm text-slate-600">
@@ -328,14 +308,14 @@ export default function BudgetingTab({
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {/* Budget progress */}
-        <div className={`${CARD_CLASS} col-span-2`}>
+        <div className={`${CARD_CLASS} col-span-1 sm:col-span-2`}>
           <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5">
             Monthly spending limit
             <InfoTooltip text="Your self-set monthly spending limit saved to your profile. The progress bar shows (This month's statement outflows ÷ Budget) × 100. Remaining = Budget − outflows." />
           </p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">
+          <p className="text-2xl font-bold text-gray-900 mt-2 sm:text-3xl">
             S${fmt(budget)}
           </p>
           <div className="mt-3 bg-gray-100 rounded-full h-2 overflow-hidden">
@@ -349,25 +329,19 @@ export default function BudgetingTab({
           <div className="mt-2 flex items-center justify-between text-sm text-gray-500">
             <span>
               Remaining:{" "}
-              <span className="font-semibold text-gray-700">
-                S${fmt(remaining)}
-              </span>
+              <span className="font-semibold text-gray-700">S${fmt(remaining)}</span>
             </span>
-            <span className="text-gray-400">
+            <span className="flex items-center gap-1 text-gray-400">
               S${fmt(spent)} spent this month
               <InfoTooltip text="Derived from debit transactions in your uploaded statements for the current calendar month." />
             </span>
           </div>
         </div>
 
-        {/* Budget input — saves to Firestore */}
+        {/* Budget input */}
         <div className={`${CARD_CLASS} col-span-1`}>
-          <p className="text-sm text-gray-500 font-medium">
-            Update spending limit
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5 mb-3">
-            Saved to your profile
-          </p>
+          <p className="text-sm text-gray-500 font-medium">Update spending limit</p>
+          <p className="text-xs text-gray-400 mt-0.5 mb-3">Saved to your profile</p>
           <div className="flex gap-2">
             <input
               type="number"
@@ -375,7 +349,7 @@ export default function BudgetingTab({
               onChange={(e) => setBudgetInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSaveBudget()}
               placeholder="Enter amount"
-              className="flex-1 min-w-0 bg-gray-100 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-400/30 focus:bg-white transition-all"
+              className="flex-1 min-w-0 bg-gray-100 rounded-lg px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-teal-400/30 focus:bg-white transition-all"
             />
             <button
               onClick={handleSaveBudget}
@@ -385,9 +359,7 @@ export default function BudgetingTab({
               {savingBudget ? "…" : "Save"}
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            Current: S${fmt(budget)}/month
-          </p>
+          <p className="text-xs text-gray-400 mt-2">Current: S${fmt(budget)}/month</p>
         </div>
       </div>
 
@@ -397,12 +369,10 @@ export default function BudgetingTab({
           6-month Emergency Savings Goal
           <InfoTooltip text="Target = Monthly expenses × 6. Progress = (Current liquid savings ÷ Target) × 100. We recommend keeping 6 months of expenses in easily accessible accounts." />
         </p>
-        <p className="text-3xl font-bold text-gray-900 mt-2">
+        <p className="text-2xl font-bold text-gray-900 mt-2 sm:text-3xl">
           S${fmt(emergencySavingsTarget)}
         </p>
-        <p className="text-sm text-gray-400 mt-1">
-          Based on your monthly expenses × 6
-        </p>
+        <p className="text-sm text-gray-400 mt-1">Based on your monthly expenses × 6</p>
         <div className="mt-4 bg-gray-100 rounded-full h-2 overflow-hidden">
           <div
             className="h-2 rounded-full bg-green-500 transition-all duration-500"
@@ -411,28 +381,26 @@ export default function BudgetingTab({
         </div>
         <div className="flex justify-between text-xs text-gray-400 mt-1.5">
           <span>S${fmt(emergencySavingsCurrent)} saved</span>
-          <span>
-            S${fmt(emergencyGap)} to goal · {Math.round(emergencySavingsPct)}%
-          </span>
+          <span>S${fmt(emergencyGap)} to goal · {Math.round(emergencySavingsPct)}%</span>
         </div>
       </div>
 
       {/* ── Transactions header + Gmail controls ─── */}
       <div className="px-1 mt-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h2 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
               Transactions
             </h2>
             <span className="mt-1 text-sm text-slate-600">
               All transactions from statements and email imports
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {onUploadClick && (
               <button
                 onClick={onUploadClick}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm transition hover:bg-gray-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-600 shadow-sm transition hover:bg-gray-50"
               >
                 <Upload className="h-4 w-4" />
                 Upload
@@ -443,16 +411,14 @@ export default function BudgetingTab({
                 <button
                   onClick={emailTx.sync}
                   disabled={emailTx.syncing}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
                 >
-                  <RefreshCw
-                    className={`h-4 w-4 ${emailTx.syncing ? "animate-spin" : ""}`}
-                  />
+                  <RefreshCw className={`h-4 w-4 ${emailTx.syncing ? "animate-spin" : ""}`} />
                   {emailTx.syncing ? "Syncing…" : "Pull from inbox"}
                 </button>
                 <button
                   onClick={gmail.unlinkGmail}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 transition"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 min-h-[44px] text-sm text-gray-500 hover:bg-gray-50 transition"
                   title={`Linked: ${gmail.gmailEmail || "Gmail"}`}
                 >
                   <Unlink className="h-4 w-4" />
@@ -462,7 +428,7 @@ export default function BudgetingTab({
               <button
                 onClick={gmail.linkGmail}
                 disabled={gmail.linking}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-teal-600 disabled:opacity-50"
               >
                 <Mail className="h-4 w-4" />
                 {gmail.linking ? "Linking…" : "Link Gmail"}
@@ -471,32 +437,38 @@ export default function BudgetingTab({
           </div>
         </div>
         {gmail.gmailLinked && gmail.gmailEmail && (
-          <p className="text-xs text-gray-400 mt-1">
-            Connected to {gmail.gmailEmail}
-          </p>
+          <p className="text-xs text-gray-400 mt-1">Connected to {gmail.gmailEmail}</p>
         )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard
-          title="Total Transactions"
-          value={liveSummary.totalCount}
-          valueColor="text-teal-500"
-          tooltip="Count of all debit and credit entries from statements and email imports."
-        />
-        <StatCard
-          title="Total Inflow"
-          value={liveSummary.totalInflow}
-          valueColor="text-teal-500"
-          tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds."
-        />
-        <StatCard
-          title="Total Outflow"
-          value={liveSummary.totalOutflow}
-          valueColor="text-teal-500"
-          tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out."
-        />
+      {/* ── Summary stat cards — horizontal scroll on mobile ── */}
+      <div className="overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="flex gap-4 sm:grid sm:grid-cols-3 min-w-[480px] sm:min-w-0">
+          <div className="flex-1">
+            <StatCard
+              title="Total Transactions"
+              value={liveSummary.totalCount}
+              valueColor="text-teal-500"
+              tooltip="Count of all debit and credit entries from statements and email imports."
+            />
+          </div>
+          <div className="flex-1">
+            <StatCard
+              title="Total Inflow"
+              value={liveSummary.totalInflow}
+              valueColor="text-teal-500"
+              tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds."
+            />
+          </div>
+          <div className="flex-1">
+            <StatCard
+              title="Total Outflow"
+              value={liveSummary.totalOutflow}
+              valueColor="text-teal-500"
+              tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out."
+            />
+          </div>
+        </div>
       </div>
 
       {/* Unified transaction table */}
@@ -518,16 +490,13 @@ export default function BudgetingTab({
           <div className="space-y-3">
             {derivedCategorySpending.map((item) => (
               <div key={item.category} className="flex items-center gap-3">
-                <span className="text-xs text-gray-600 w-28 shrink-0">
+                <span className="text-xs text-gray-600 w-20 sm:w-28 shrink-0 truncate">
                   {item.category}
                 </span>
                 <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
                   <div
                     className="h-2 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${item.percentage}%`,
-                      backgroundColor: item.color,
-                    }}
+                    style={{ width: `${item.percentage}%`, backgroundColor: item.color }}
                   />
                 </div>
                 <span className="text-xs font-medium text-gray-600 w-16 text-right shrink-0">

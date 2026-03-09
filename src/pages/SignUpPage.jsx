@@ -137,7 +137,7 @@ export default function SignUpPage() {
       value,
       onChange: (e) => onChange(e.target.value),
       className:
-        "w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition focus:ring-1",
+        "w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-4 text-base text-white placeholder-slate-500 outline-none transition focus:ring-1",
       style: { borderColor: "#1E3A5F" },
       onFocus: (e) => {
         e.target.style.borderColor = "#00C9B1";
@@ -325,7 +325,7 @@ export default function SignUpPage() {
                   required
                   placeholder="Min. 6 characters"
                   {...inputProps(password, setPassword)}
-                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-sm text-white placeholder-slate-500 outline-none transition focus:ring-1"
+                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-base text-white placeholder-slate-500 outline-none transition focus:ring-1"
                 />
                 <button
                   type="button"
@@ -426,7 +426,7 @@ export default function SignUpPage() {
                   required
                   placeholder="Re-enter password"
                   {...inputProps(confirmPassword, setConfirmPassword)}
-                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-sm text-white placeholder-slate-500 outline-none transition focus:ring-1"
+                  className="w-full rounded-lg border bg-white/5 py-2.5 pl-10 pr-10 text-base text-white placeholder-slate-500 outline-none transition focus:ring-1"
                 />
                 <button
                   type="button"
