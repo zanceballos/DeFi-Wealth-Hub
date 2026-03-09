@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+pipeline_local.db
+data/raw/*
+!data/raw/.gitkeep
+data/artifacts/*
+!data/artifacts/.gitkeep
+.env.local
+.env.local
+.env.local
+.env
