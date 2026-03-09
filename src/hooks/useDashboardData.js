@@ -20,7 +20,7 @@
  *   }
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/firebase.js'
 import {
   collection,
@@ -30,6 +30,8 @@ import {
   orderBy,
   query,
   limit,
+  setDoc,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { useAuthContext } from './useAuthContext.js'
 import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
@@ -39,6 +41,7 @@ import {
   buildBudgetViewModel,
   safeNumber,
 } from '../services/dashboardViewModel.js'
+import { getYfPrice } from '../services/marketDataService.js'
 
 // ── Mock fallback data (original static constants) ──
 import { HERO_STATS as MOCK_HERO } from '../data/mockHero.js'
@@ -235,7 +238,13 @@ export default function useDashboardData() {
       setRaw({ profile, statements, wellness, netWorthHistory: historyItems })
 
       // ── Detect empty state ────────────────────────────────────────────
-      const hasData = !!wellness || activeStmts.length > 0 || historyItems.length > 0
+      // Also consider manual_accounts saved on the user document
+      const manual = profile?.manual_accounts
+      const hasManual = (
+        (Array.isArray(manual?.accounts) && manual.accounts.length > 0) ||
+        (Array.isArray(manual?.investments) && manual.investments.length > 0)
+      )
+      const hasData = hasManual || !!wellness || activeStmts.length > 0 || historyItems.length > 0
       setIsEmpty(!hasData)
 
       // ════════════════════════════════════════════════════════════════════
@@ -314,6 +323,83 @@ export default function useDashboardData() {
         if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
       }
 
+      // ── Manual data asset breakdown (cash from user manual_accounts) ──
+      // Start: line 322 onwards as requested
+      const manualAccounts = profile?.manual_accounts?.accounts
+      const manualInvestments = profile?.manual_accounts?.investments
+
+      // Aggregate manual cash from accounts (if present)
+      const manualCash = Array.isArray(manualAccounts)
+        ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+        : 0
+
+      // Aggregate manual investments into stocks and crypto buckets (sum of lots: quantity * averageCost)
+      let manualStocks = 0
+      let manualCrypto = 0
+      if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
+        for (const inv of manualInvestments) {
+          const lots = Array.isArray(inv?.lots) ? inv.lots : []
+          const assetTotal = lots.reduce((sum, lot) => {
+            const qty = safeNumber(lot?.quantity)
+            const avg = safeNumber(lot?.averageCost)
+            const val = qty * avg
+            return sum + (Number.isFinite(val) ? val : 0)
+          }, 0)
+
+          // normalise type to buckets
+          const t = (inv?.type || '').toLowerCase()
+          if (t === 'crypto') {
+            manualCrypto += assetTotal
+          } else if (t === 'stocks_etfs' || t === 'stocks_etf' || t === 'stock_etf' || t === 'stocks' ) {
+            manualStocks += assetTotal
+          } else {
+            // default unknown types to stocks bucket to avoid losing value
+            manualStocks += assetTotal
+          }
+        }
+      }
+
+      // If we have any manual totals (cash/stocks/crypto), recalc totals including them and recompute percentages
+      if (manualCash > 0 || manualStocks > 0 || manualCrypto > 0) {
+        const totals2 = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
+        let grandTotal2 = 0
+
+        // Include statement-based totals (same logic as above)
+        for (const stmt of activeStmts) {
+          const bd = stmt.asset_class_breakdown ?? {}
+          for (const key of Object.keys(totals2)) {
+            const v = safeNumber(bd[key])
+            totals2[key] += v
+            grandTotal2 += v
+          }
+        }
+
+        // Add manual figures on top of statement totals
+        if (manualCash > 0) {
+          totals2.cash += manualCash
+          grandTotal2 += manualCash
+        }
+        if (manualStocks > 0) {
+          totals2.stocks += manualStocks
+          grandTotal2 += manualStocks
+        }
+        if (manualCrypto > 0) {
+          totals2.crypto += manualCrypto
+          grandTotal2 += manualCrypto
+        }
+
+        const breakdown2 = Object.entries(totals2)
+          .filter(([, v]) => v > 0)
+          .map(([key, v]) => ({
+            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
+            label:   BREAKDOWN_LABELS[key] ?? key,
+            value:   fmtCurrency(v),
+            percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
+          }))
+
+        setNetWorthBreakdown(breakdown2)
+      }
+
       // Net worth time series
       if (historyItems.length > 0) {
         setNetWorthSeries(
@@ -345,6 +431,181 @@ export default function useDashboardData() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Manual holdings aggregation helpers (quantities per asset by type)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const manualHoldings = useMemo(() => {
+    const profile = raw.profile
+    const investments = profile?.manual_accounts?.investments
+    const accounts = profile?.manual_accounts?.accounts
+
+    // Cash total from accounts
+    const manualCash = Array.isArray(accounts)
+      ? accounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+      : 0
+
+    const stocks = new Map() // symbol -> totalQty
+    const crypto = new Map() // symbol -> totalQty
+
+    if (Array.isArray(investments)) {
+      for (const inv of investments) {
+        const lots = Array.isArray(inv?.lots) ? inv.lots : []
+        const qtyTotal = lots.reduce((s, l) => s + safeNumber(l?.quantity), 0)
+        const symbolRaw = (inv?.asset ?? '').trim()
+        if (!symbolRaw || qtyTotal <= 0) continue
+        const symbol = symbolRaw.toUpperCase()
+        const type = (inv?.type || '').toLowerCase()
+        if (type === 'crypto') {
+          crypto.set(symbol, (crypto.get(symbol) || 0) + qtyTotal)
+        } else {
+          // default and stocks_etfs bucket
+          stocks.set(symbol, (stocks.get(symbol) || 0) + qtyTotal)
+        }
+      }
+    }
+
+    return { manualCash, stocks, crypto }
+  }, [raw.profile])
+
+  // Helper: rebuild net worth breakdown combining statements + manual cash + provided live valuations
+  const rebuildBreakdown = useCallback(({ liveStocksValue = null, liveCryptoValue = null } = {}) => {
+    const activeStmts = Array.isArray(raw.statements)
+      ? raw.statements.filter((s) => s.status === 'parsed' || s.status === 'approved')
+      : []
+
+    const totals = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
+    let grand = 0
+    for (const stmt of activeStmts) {
+      const bd = stmt.asset_class_breakdown ?? {}
+      for (const key of Object.keys(totals)) {
+        const v = safeNumber(bd[key])
+        totals[key] += v
+        grand += v
+      }
+    }
+
+    // Add manual cash
+    if (manualHoldings.manualCash > 0) {
+      totals.cash += manualHoldings.manualCash
+      grand += manualHoldings.manualCash
+    }
+
+    // Stocks & crypto: prefer live valuations if provided, otherwise keep existing statement totals only
+    if (liveStocksValue != null && liveStocksValue > 0) {
+      // Replace or augment stocks bucket: we add live value on top of statements
+      totals.stocks += liveStocksValue
+      grand += liveStocksValue
+    }
+    if (liveCryptoValue != null && liveCryptoValue > 0) {
+      totals.crypto += liveCryptoValue
+      grand += liveCryptoValue
+    }
+
+    const breakdown = Object.entries(totals)
+      .filter(([, v]) => v > 0)
+      .map(([key, v]) => ({
+        color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
+        label:   BREAKDOWN_LABELS[key] ?? key,
+        value:   fmtCurrency(v),
+        percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
+      }))
+
+    if (breakdown.length > 0) setNetWorthBreakdown(breakdown)
+  }, [raw.statements, manualHoldings])
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Periodic price updates via yfinance-defi
+  //  - Stocks every 24 hours
+  //  - Crypto every 1 hour
+  // Writes to Firestore under users/{uid}/live_quotes/{SYMBOL}
+  // Also updates local netWorthBreakdown so UI reflects changes without extra listeners.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Stocks (24h)
+  useEffect(() => {
+    if (!uid) return
+    const symbols = Array.from(manualHoldings.stocks.keys())
+    if (symbols.length === 0) return
+
+    let cancelled = false
+
+    async function runOnce() {
+      // Fetch all stock symbols; daily cadence so burst should be acceptable if list is small
+      const prices = await Promise.all(symbols.map((s) => getYfPrice(s, { ttlMs: 24 * 60 * 60 * 1000 })))
+      if (cancelled) return
+
+      // Persist and compute valuation
+      let liveStocksValue = 0
+      await Promise.all(symbols.map(async (s, i) => {
+        const price = Number(prices[i])
+        if (!Number.isFinite(price) || price <= 0) return
+        const qty = manualHoldings.stocks.get(s) || 0
+        liveStocksValue += qty * price
+        try {
+          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
+            symbol: s,
+            price,
+            source: 'yfinance-defi',
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        } catch (e) {
+          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
+        }
+      }))
+
+      rebuildBreakdown({ liveStocksValue })
+    }
+
+    runOnce()
+    const interval = setInterval(runOnce, 86_400_000) // 24h
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [uid, manualHoldings.stocks, rebuildBreakdown])
+
+  // Crypto (1h)
+  useEffect(() => {
+    if (!uid) return
+    const symbols = Array.from(manualHoldings.crypto.keys())
+    if (symbols.length === 0) return
+
+    let cancelled = false
+
+    async function runOnce() {
+      // yfinance-defi expects crypto pairs like BTC-USD; append "-USD" if not already present
+      const pairSymbols = symbols.map((s) => (s.includes('-') ? s : `${s}-USD`))
+      const prices = await Promise.all(pairSymbols.map((ps) => getYfPrice(ps, { ttlMs: 60 * 60 * 1000 })))
+      if (cancelled) return
+      let liveCryptoValue = 0
+      await Promise.all(symbols.map(async (s, i) => {
+        const price = Number(prices[i])
+        if (!Number.isFinite(price) || price <= 0) return
+        const qty = manualHoldings.crypto.get(s) || 0
+        liveCryptoValue += qty * price
+        try {
+          await setDoc(doc(db, 'users', uid, 'live_quotes', s), {
+            symbol: s,
+            price,
+            source: 'yfinance-defi',
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        } catch (e) {
+          if (import.meta?.env?.DEV) console.warn('write live quote failed', s, e)
+        }
+      }))
+
+      rebuildBreakdown({ liveCryptoValue })
+    }
+
+    runOnce()
+    const interval = setInterval(runOnce, 3_600_000) // 1h
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [uid, manualHoldings.crypto, rebuildBreakdown])
 
   // ── Return ────────────────────────────────────────────────────────────
   return {
