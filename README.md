@@ -8,7 +8,6 @@
 ![InternVL](https://img.shields.io/badge/InternVL-000000?style=for-the-badge&logoColor=white)
 ![Recharts](https://img.shields.io/badge/Recharts-22b5bf?style=for-the-badge&logoColor=white)
 
-
 ### **[🌐 View Live App - https://defi-wealth-hub.web.app](https://defi-wealth-hub.web.app)**
 
 > **A privacy-first AI financial cockpit** — parse, track, and act on your finances without sharing bank credentials.
@@ -22,6 +21,12 @@ DeFi Wealth Hub unifies your assets into one secure dashboard via **two zero-cre
 2. **📧 Gmail Sync:** Secure OAuth-connection auto-parses Bank transaction alerts (DBS, OCBC, UOB, GrabPay).
 
 These feed a unified Firestore dashboard featuring net-worth tracking, persistent budgeting, and a 4-pillar Wellness Score. A dedicated Groq (Llama 3.3 70B) AI Advisory engine generates personalised financial roadmaps, while our Privacy Hub gives you total surgical control over your data.
+
+---
+
+## 📚 Documentation
+* **Live Docs:** [defi-wealth-hub.web.app/docs](https://defi-wealth-hub.web.app/docs)
+* **Full Reference:** [docs/full-documentation.md](docs/full-documentation.md)
 
 ---
 
