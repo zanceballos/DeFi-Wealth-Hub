@@ -202,8 +202,8 @@ export default function DocsPage() {
             <span className="bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(135deg,#00C9B1,#0099FF)" }}>
               DeFi Wealth Hub
             </span>
-            <ChevronRight className={`h-3.5 w-3.5 ${dk ? "text-slate-500" : "text-gray-400"}`} />
-            <span className={`font-normal ${dk ? "text-slate-400" : "text-gray-500"}`}>Docs</span>
+            <ChevronRight className={`hidden sm:block h-3.5 w-3.5 ${dk ? "text-slate-500" : "text-gray-400"}`} />
+            <span className={`hidden sm:block font-normal ${dk ? "text-slate-400" : "text-gray-500"}`}>Docs</span>
           </Link>
         </div>
 
@@ -221,7 +221,7 @@ export default function DocsPage() {
           </button>
 
           <a
-            href="https://github.com/nicolotan/DeFi-Wealth-Hub"
+            href="https://github.com/zanceballos/DeFi-Wealth-Hub"
             target="_blank" rel="noreferrer"
             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition ${
               dk
@@ -1251,7 +1251,7 @@ savingsRatePct     = (4,490 − 3,458) / 4,490 × 100 = 22.98%`}</CodeBlock>
                 and a Google OAuth Client ID for Gmail sync.
               </p>
               <CodeBlock>{`# Clone the repository
-git clone https://github.com/nicolotan/DeFi-Wealth-Hub.git
+git clone https://github.com/zanceballos/DeFi-Wealth-Hub.git
 cd DeFi-Wealth-Hub
 
 # Install dependencies
