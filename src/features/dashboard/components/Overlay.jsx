@@ -22,6 +22,7 @@ import {
 } from "../../../services/financialDataService.js";
 import { ingestStatementToFirestore } from "../../../services/statementIngestionService.js";
 import { useAuthContext } from "../../../hooks/useAuthContext.js";
+import { safeFetchJson } from "../../../lib/safeFetch.js";
 
 const API_BASE_URL =
   import.meta.env.VITE_PIPELINE_API_BASE_URL ??
@@ -877,10 +878,11 @@ function getMockRows(source = 'bank', offsetMonths = 0) {
 
 function toRows(rawRows) {
   if (!Array.isArray(rawRows)) return [];
+  const stamp = Date.now();
   return rawRows.map((row, index) => {
     const payload = row.normalized_payload ?? row.normalizedPayload ?? {};
     return {
-      id: row.id ?? row.row_id ?? row.rowId ?? `local-${index}`,
+      id: row.id ?? row.row_id ?? row.rowId ?? `local-${stamp}-${index}`,
       normalizedPayload: {
         ...payload,
         category: payload.category
@@ -1176,22 +1178,26 @@ export default function Overlay({
       setErrorMessage("Please select a file first.");
       return;
     }
+    // Capture and clear the selected file before starting the upload to avoid reusing a consumed File object
+    const fileToUpload = selectedFile;
+    setSelectedFile(null);
     setIsProcessing(true);
     setErrorMessage("");
     setInfoMessage("");
     setRows([]);
     setFirebaseSaveResult(null);
     const formData = new FormData();
-    formData.append("file", selectedFile);
+    formData.append("file", fileToUpload);
     formData.append("source", source);
     formData.append("user_id", uid);
     try {
-      const res = await fetch(`${API_BASE_URL}/v1/documents/upload-and-parse`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) throw new Error((await res.text()) || "Upload failed.");
-      const payload = await res.json();
+      const payload = await safeFetchJson(
+        `${API_BASE_URL}/v1/documents/upload-and-parse`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
       const returnedJobId = payload.job?.id ?? payload.job_id ?? "";
       setJobId(returnedJobId);
       const parsedRows = toRows(payload.rows);
@@ -1203,12 +1209,11 @@ export default function Overlay({
         `${parsedRows.length} rows parsed. Review each row before saving.`,
       );
     } catch (err) {
-      const msg =
-        err instanceof TypeError
-          ? `Cannot reach backend at ${API_BASE_URL}.`
-          : err.message;
+      const msg = err?.message || `Cannot reach backend at ${API_BASE_URL}.`;
       setErrorMessage(msg);
       showToast("error", msg);
+      // Restore previous file selection on error to allow retry
+      setSelectedFile(fileToUpload);
     } finally {
       setIsProcessing(false);
     }
@@ -1237,6 +1242,12 @@ export default function Overlay({
   };
 
   const saveToFirebase = async () => {
+    if (!uid) {
+      const msg = "You must be logged in to save statements.";
+      setErrorMessage(msg);
+      showToast("error", msg);
+      return;
+    }
     const rowsToSave = rows.filter((r) => r.state !== "rejected");
     if (!rowsToSave.length) {
       setErrorMessage("No rows to save.");
@@ -1275,7 +1286,13 @@ export default function Overlay({
       onSaveSuccess?.();
       setTimeout(() => setIsOverlayOpen(false), 1500);
     } catch (err) {
-      showToast("error", "Save failed: " + (err.message || "Unknown error"));
+      let msg = err?.message || "Unknown error";
+      const code = err?.code || err?.name;
+      if (code === "permission-denied") msg = "Permission denied: check Firestore rules.";
+      else if (code === "unauthenticated") msg = "Please log in to save statements.";
+      else if (code === "unavailable") msg = "Firestore unavailable. Check network and try again.";
+      showToast("error", "Save failed: " + msg);
+      setErrorMessage("Save failed: " + msg);
     } finally {
       setIsSavingToFirebase(false);
     }
