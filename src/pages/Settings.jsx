@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
-import { updatePassword, updateEmail, deleteUser } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { updateEmail, deleteUser, sendPasswordResetEmail } from 'firebase/auth'
+import { doc, deleteDoc } from 'firebase/firestore'
+import { auth, db } from '../lib/firebase'
+import { User, Mail, Lock, Shield, Bell, Globe, LogOut, Trash2, ChevronRight, Check, AlertTriangle } from 'lucide-react'
+
+const CARD = 'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5 sm:p-6'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -11,12 +15,11 @@ export default function Settings() {
   // Form states
   const [displayName, setDisplayName] = useState(user?.displayName || '')
   const [email, setEmail] = useState(user?.email || '')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+
 
   // Preferences
-  const [currency, setCurrency] = useState('USD')
-  const [timezone, setTimezone] = useState('UTC')
+  const [currency, setCurrency] = useState('SGD')
+  const [timezone, setTimezone] = useState('GMT+8')
   const [language, setLanguage] = useState('English')
 
   // Notifications
@@ -30,20 +33,18 @@ export default function Settings() {
 
   // Security
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
-  const [activeSessions, setActiveSessions] = useState([
+  const [activeSessions] = useState([
     { id: 1, device: 'Chrome on Windows', lastActive: 'Now', location: 'Singapore' },
     { id: 2, device: 'Safari on iPhone', lastActive: '2 hours ago', location: 'Singapore' },
   ])
+  const [sessions, setSessions] = useState(activeSessions)
 
   // Submission states
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [deleteDataConfirm, setDeleteDataConfirm] = useState(false)
-  const [exportLoading, setExportLoading] = useState(false)
 
-  // Clear messages after 5 seconds
   const showMessage = (message, isError = false) => {
     if (isError) {
       setErrorMessage(message)
@@ -54,143 +55,62 @@ export default function Settings() {
     }
   }
 
-  // Toggle notification preference
   const handleToggleNotification = (key) => {
-    setEmailNotifications(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }))
-    showMessage(`${key.charAt(0).toUpperCase() + key.slice(1)} notification updated`)
+    setEmailNotifications(prev => ({ ...prev, [key]: !prev[key] }))
+    showMessage('Notification preference updated')
   }
 
-  // Export data as JSON
-  const handleExportData = async () => {
-    setExportLoading(true)
-    try {
-      const dataToExport = {
-        user: {
-          name: user?.displayName,
-          email: user?.email,
-          accountCreated: user?.metadata?.creationTime,
-          lastSignIn: user?.metadata?.lastSignInTime,
-        },
-        exportedAt: new Date().toISOString(),
-      }
-      const dataStr = JSON.stringify(dataToExport, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-      const url = URL.createObjectURL(dataBlob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `defi-wealth-hub-export-${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-      showMessage('Data exported successfully')
-    } catch (error) {
-      showMessage(error.message || 'Failed to export data', true)
-    } finally {
-      setExportLoading(false)
-    }
-  }
-
-  // Handle logout session
   const handleLogoutSession = (sessionId) => {
-    setActiveSessions(prev => prev.filter(s => s.id !== sessionId))
+    setSessions(prev => prev.filter(s => s.id !== sessionId))
     showMessage('Session ended')
   }
 
-  // Toggle 2FA
   const handleToggle2FA = () => {
     setTwoFactorEnabled(!twoFactorEnabled)
     showMessage(`Two-factor authentication ${!twoFactorEnabled ? 'enabled' : 'disabled'}`)
   }
 
-  // Update display name
   const handleUpdateDisplayName = async (e) => {
     e.preventDefault()
-    if (!displayName.trim()) {
-      showMessage('Display name cannot be empty', true)
-      return
-    }
-
+    if (!displayName.trim()) { showMessage('Display name cannot be empty', true); return }
     setLoading(true)
     try {
       await user.updateProfile({ displayName: displayName.trim() })
       showMessage('Display name updated successfully')
     } catch (error) {
       showMessage(error.message || 'Failed to update display name', true)
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  // Update email
   const handleUpdateEmail = async (e) => {
     e.preventDefault()
-    if (!email.trim()) {
-      showMessage('Email cannot be empty', true)
-      return
-    }
-
+    if (!email.trim()) { showMessage('Email cannot be empty', true); return }
     setLoading(true)
     try {
       const currentUser = auth.currentUser
-      if (!currentUser) {
-        showMessage('User not authenticated', true)
-        return
-      }
+      if (!currentUser) { showMessage('User not authenticated', true); return }
       await updateEmail(currentUser, email.trim())
       showMessage('Email updated successfully')
     } catch (error) {
       showMessage(error.message || 'Failed to update email', true)
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  // Update password
-  const handleUpdatePassword = async (e) => {
-    e.preventDefault()
-    if (!newPassword || !confirmPassword) {
-      showMessage('Both password fields are required', true)
-      return
-    }
-
-    if (newPassword !== confirmPassword) {
-      showMessage('Passwords do not match', true)
-      return
-    }
-
-    if (newPassword.length < 6) {
-      showMessage('Password must be at least 6 characters', true)
-      return
-    }
-
+  const handleResetPassword = async () => {
+    if (!user?.email) { showMessage('No email associated with this account', true); return }
     setLoading(true)
     try {
-      const currentUser = auth.currentUser
-      if (!currentUser) {
-        showMessage('User not authenticated', true)
-        return
-      }
-      await updatePassword(currentUser, newPassword)
-      setNewPassword('')
-      setConfirmPassword('')
-      showMessage('Password updated successfully')
+      await sendPasswordResetEmail(auth, user.email)
+      showMessage('Password reset email sent — check your inbox and spam folder')
     } catch (error) {
-      showMessage(error.message || 'Failed to update password', true)
-    } finally {
-      setLoading(false)
-    }
+      showMessage(error.message || 'Failed to send reset email', true)
+    } finally { setLoading(false) }
   }
 
-  // Handle logout
   const handleLogout = async () => {
     setLoading(true)
     try {
       await logout()
-      showMessage('Logged out successfully')
       navigate('/login')
     } catch (error) {
       showMessage(error.message || 'Failed to logout', true)
@@ -198,21 +118,12 @@ export default function Settings() {
     }
   }
 
-  // Handle account deletion
   const handleDeleteAccount = async () => {
     setLoading(true)
     try {
       const currentUser = auth.currentUser
-      if (!currentUser) {
-        showMessage('User not authenticated', true)
-        return
-      }
-      // Delete user data from Firestore if applicable
-      // await deleteUserData(user.uid)
-      
-      // Delete auth account
-      await deleteUser(currentUser)
-      showMessage('Account deleted successfully')
+      if (!currentUser) { showMessage('User not authenticated', true); return }
+      await deleteDoc(doc(db, 'users', currentUser.uid)).then(() => deleteUser(currentUser))
       navigate('/login')
     } catch (error) {
       showMessage(error.message || 'Failed to delete account', true)
@@ -220,496 +131,341 @@ export default function Settings() {
     }
   }
 
-  // Handle delete all data
-  const handleDeleteData = async () => {
-    setLoading(true)
-    try {
-      // Delete user data from Firestore
-      // await deleteUserData(user.uid)
-      showMessage('All data deleted successfully')
-    } catch (error) {
-      showMessage(error.message || 'Failed to delete data', true)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const NOTIFICATION_ITEMS = [
+    { key: 'transactions', label: 'Transaction Alerts', desc: 'Get notified of new transactions' },
+    { key: 'portfolioChanges', label: 'Portfolio Changes', desc: 'Notify on significant portfolio changes' },
+    { key: 'alerts', label: 'Price Alerts', desc: 'Notify when asset prices hit your targets' },
+    { key: 'weeklyReport', label: 'Weekly Report', desc: 'Receive weekly portfolio summary' },
+    { key: 'securityAlerts', label: 'Security Alerts', desc: 'Important alerts about account security' },
+  ]
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your account and preferences</p>
-      </div>
+    <section className="relative isolate min-h-full w-full p-4 sm:p-6 lg:p-8">
+      {/* Background blobs — same as dashboard */}
+      <div className="pointer-events-none fixed -top-20 -right-20 h-72 w-72 rounded-full bg-indigo-200/40 blur-3xl" />
+      <div className="pointer-events-none fixed bottom-0 left-0 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl" />
 
-      {/* Success/Error Messages */}
-      {successMessage && (
-        <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-          <p className="text-sm font-medium text-green-800">✓ {successMessage}</p>
-        </div>
-      )}
-      {errorMessage && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-          <p className="text-sm font-medium text-red-800">✕ {errorMessage}</p>
-        </div>
-      )}
+      <div className="relative z-10 space-y-6">
+        {/* ── Page header ── */}
+        <header className="px-1">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
+            Settings
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Manage your account, preferences, and security
+          </p>
+        </header>
 
-      {/* Profile Settings Section */}
-      <div className="space-y-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Profile Settings</h2>
+        {/* ── Toast messages ── */}
+        {successMessage && (
+          <div className={`${CARD} !border-emerald-200 !bg-emerald-50/80 flex items-center gap-2`}>
+            <Check className="h-4 w-4 text-emerald-600" />
+            <p className="text-sm font-medium text-emerald-700">{successMessage}</p>
+          </div>
+        )}
+        {errorMessage && (
+          <div className={`${CARD} !border-red-200 !bg-red-50/80 flex items-center gap-2`}>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <p className="text-sm font-medium text-red-700">{errorMessage}</p>
+          </div>
+        )}
+
+        {/* ── Profile Settings ── */}
+        <article className={CARD}>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
+              <User className="h-4 w-4" />
+            </span>
+            <h2 className="text-base font-semibold text-slate-900">Profile</h2>
+          </div>
 
           {/* Display Name */}
-          <form onSubmit={handleUpdateDisplayName} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Display Name
-              </label>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Enter your display name"
-                  className="flex-1 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 focus:bg-white transition-all"
-                  disabled={loading}
-                />
-                <button
-                  type="submit"
-                  disabled={loading || displayName === (user?.displayName || '')}
-                  className="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Update
-                </button>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">Current: {user?.displayName || 'Not set'}</p>
-            </div>
-          </form>
-        </div>
-
-        {/* Email Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <form onSubmit={handleUpdateEmail} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <div className="flex gap-3">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  className="flex-1 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 focus:bg-white transition-all"
-                  disabled={loading}
-                />
-                <button
-                  type="submit"
-                  disabled={loading || email === (user?.email || '')}
-                  className="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Update
-                </button>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">Current: {user?.email}</p>
-            </div>
-          </form>
-        </div>
-
-        {/* Password Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                New Password
-              </label>
+          <form onSubmit={handleUpdateDisplayName} className="mb-5">
+            <label className="mb-1.5 block text-sm font-medium text-slate-600">Display Name</label>
+            <div className="flex gap-3">
               <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Enter new password"
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 focus:bg-white transition-all"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Enter your display name"
                 disabled={loading}
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-primary focus:ring-1 focus:ring-brand-primary focus:bg-white disabled:opacity-50"
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 focus:bg-white transition-all"
-                disabled={loading}
-              />
-            </div>
-
-            <div className="flex justify-between pt-2">
-              <p className="text-xs text-gray-400">Password must be at least 6 characters</p>
               <button
                 type="submit"
-                disabled={loading || !newPassword || !confirmPassword}
-                className="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                disabled={loading || displayName === (user?.displayName || '')}
+                className="rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
-                Update Password
+                Update
               </button>
             </div>
+            <p className="mt-1.5 text-xs text-slate-400">Current: {user?.displayName || 'Not set'}</p>
           </form>
-        </div>
-      </div>
 
-      {/* Preferences Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Preferences</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Currency */}
+          {/* Email */}
+          <form onSubmit={handleUpdateEmail} className="mb-5">
+            <label className="mb-1.5 block text-sm font-medium text-slate-600">Email Address</label>
+            <div className="flex gap-3">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                disabled={loading}
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-primary focus:ring-1 focus:ring-brand-primary focus:bg-white disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={loading || email === (user?.email || '')}
+                className="rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+              >
+                Update
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">Current: {user?.email}</p>
+          </form>
+
+          {/* Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-            <select
-              value={currency}
-              onChange={(e) => {
-                setCurrency(e.target.value)
-                showMessage(`Currency changed to ${e.target.value}`)
-              }}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-all"
-            >
-              <option value="USD">USD ($)</option>
-              <option value="EUR">EUR (€)</option>
-              <option value="GBP">GBP (£)</option>
-              <option value="SGD">SGD ($)</option>
-              <option value="AUD">AUD ($)</option>
-            </select>
-          </div>
-
-          {/* Timezone */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Timezone</label>
-            <select
-              value={timezone}
-              onChange={(e) => {
-                setTimezone(e.target.value)
-                showMessage(`Timezone changed to ${e.target.value}`)
-              }}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-all"
-            >
-              <option value="UTC">UTC</option>
-              <option value="GMT+8">GMT+8 (Singapore)</option>
-              <option value="EST">EST (Eastern)</option>
-              <option value="PST">PST (Pacific)</option>
-              <option value="CET">CET (Central Europe)</option>
-            </select>
-          </div>
-
-          {/* Language */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
-            <select
-              value={language}
-              onChange={(e) => {
-                setLanguage(e.target.value)
-                showMessage(`Language changed to ${e.target.value}`)
-              }}
-              className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-all"
-            >
-              <option value="English">English</option>
-              <option value="Chinese">中文 (Chinese)</option>
-              <option value="Spanish">Español (Spanish)</option>
-              <option value="French">Français (French)</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Notification Preferences Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Notifications</h2>
-        <p className="text-sm text-gray-500 mb-4">Manage your email notification preferences</p>
-        <div className="space-y-3">
-          {/* Transactions */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div>
-              <p className="font-medium text-gray-900">Transaction Alerts</p>
-              <p className="text-sm text-gray-500">Get notified of new transactions</p>
+            <label className="mb-1.5 block text-sm font-medium text-slate-600">Password</label>
+            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+              <div>
+                <p className="text-sm font-medium text-slate-800">Reset Password</p>
+                <p className="text-xs text-slate-400">We'll send a reset link to {user?.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={loading}
+                className="rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+              >
+                Send Reset Email
+              </button>
             </div>
-            <button
-              onClick={() => handleToggleNotification('transactions')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                emailNotifications.transactions ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  emailNotifications.transactions ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
+          </div>
+        </article>
+
+        {/* ── Preferences ── */}
+        <article className={CARD}>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
+              <Globe className="h-4 w-4" />
+            </span>
+            <h2 className="text-base font-semibold text-slate-900">Preferences</h2>
           </div>
 
-          {/* Portfolio Changes */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <p className="font-medium text-gray-900">Portfolio Changes</p>
-              <p className="text-sm text-gray-500">Notify on significant portfolio changes</p>
+              <label className="mb-1.5 block text-sm font-medium text-slate-600">Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => { setCurrency(e.target.value); showMessage(`Currency changed to ${e.target.value}`) }}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              >
+                <option value="SGD">SGD ($)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="AUD">AUD ($)</option>
+              </select>
             </div>
-            <button
-              onClick={() => handleToggleNotification('portfolioChanges')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                emailNotifications.portfolioChanges ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  emailNotifications.portfolioChanges ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Price Alerts */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
             <div>
-              <p className="font-medium text-gray-900">Price Alerts</p>
-              <p className="text-sm text-gray-500">Notify when asset prices hit your targets</p>
+              <label className="mb-1.5 block text-sm font-medium text-slate-600">Timezone</label>
+              <select
+                value={timezone}
+                onChange={(e) => { setTimezone(e.target.value); showMessage(`Timezone changed to ${e.target.value}`) }}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              >
+                <option value="UTC">UTC</option>
+                <option value="GMT+8">GMT+8 (Singapore)</option>
+                <option value="EST">EST (Eastern)</option>
+                <option value="PST">PST (Pacific)</option>
+                <option value="CET">CET (Central Europe)</option>
+              </select>
             </div>
-            <button
-              onClick={() => handleToggleNotification('alerts')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                emailNotifications.alerts ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  emailNotifications.alerts ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Weekly Report */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
             <div>
-              <p className="font-medium text-gray-900">Weekly Report</p>
-              <p className="text-sm text-gray-500">Receive weekly portfolio summary</p>
+              <label className="mb-1.5 block text-sm font-medium text-slate-600">Language</label>
+              <select
+                value={language}
+                onChange={(e) => { setLanguage(e.target.value); showMessage(`Language changed to ${e.target.value}`) }}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              >
+                <option value="English">English</option>
+                <option value="Chinese">中文 (Chinese)</option>
+                <option value="Spanish">Español (Spanish)</option>
+                <option value="French">Français (French)</option>
+              </select>
             </div>
-            <button
-              onClick={() => handleToggleNotification('weeklyReport')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                emailNotifications.weeklyReport ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  emailNotifications.weeklyReport ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
           </div>
+        </article>
 
-          {/* Security Alerts */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+        {/* ── Notifications ── */}
+        <article className={CARD}>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
+              <Bell className="h-4 w-4" />
+            </span>
             <div>
-              <p className="font-medium text-gray-900">Security Alerts</p>
-              <p className="text-sm text-gray-500">Important alerts about account security</p>
+              <h2 className="text-base font-semibold text-slate-900">Notifications</h2>
+              <p className="text-xs text-slate-400">Manage your email notification preferences</p>
             </div>
-            <button
-              onClick={() => handleToggleNotification('securityAlerts')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                emailNotifications.securityAlerts ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  emailNotifications.securityAlerts ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
           </div>
-        </div>
-      </div>
 
-      {/* Security Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Security</h2>
-
-        {/* Two-Factor Authentication */}
-        <div className="mb-6 pb-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-900">Two-Factor Authentication</p>
-              <p className="text-sm text-gray-500 mt-1">Add an extra layer of security to your account</p>
-            </div>
-            <button
-              onClick={handleToggle2FA}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                twoFactorEnabled ? 'bg-teal-500' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  twoFactorEnabled ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-          {twoFactorEnabled && (
-            <p className="text-xs text-green-600 mt-2">✓ Two-factor authentication is enabled</p>
-          )}
-        </div>
-
-        {/* Active Sessions */}
-        <div>
-          <p className="font-medium text-gray-900 mb-4">Active Sessions</p>
           <div className="space-y-2">
-            {activeSessions.map((session) => (
-              <div key={session.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+            {NOTIFICATION_ITEMS.map((item) => (
+              <div key={item.key} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-3.5 transition hover:border-slate-200">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{session.device}</p>
-                  <p className="text-xs text-gray-500">{session.location} • {session.lastActive}</p>
+                  <p className="text-sm font-medium text-slate-800">{item.label}</p>
+                  <p className="text-xs text-slate-400">{item.desc}</p>
                 </div>
                 <button
-                  onClick={() => handleLogoutSession(session.id)}
-                  className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded transition-colors"
+                  type="button"
+                  onClick={() => handleToggleNotification(item.key)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    emailNotifications[item.key] ? 'bg-brand-primary' : 'bg-slate-200'
+                  }`}
                 >
-                  End
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                    emailNotifications[item.key] ? 'translate-x-5' : 'translate-x-1'
+                  }`} />
                 </button>
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        </article>
 
-      {/* Data & Privacy Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Data & Privacy</h2>
-        <p className="text-sm text-gray-500 mb-4">Manage your personal data</p>
-        
-        <button
-          onClick={handleExportData}
-          disabled={exportLoading}
-          className="w-full bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          {exportLoading ? 'Exporting...' : 'Export My Data (JSON)'}
-        </button>
-        <p className="text-xs text-gray-400 mt-2">Download a copy of your account data for backup or transfer</p>
-      </div>
+        {/* ── Security ── */}
+        <article className={CARD}>
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
+              <Shield className="h-4 w-4" />
+            </span>
+            <h2 className="text-base font-semibold text-slate-900">Security</h2>
+          </div>
 
-      {/* Danger Zone Section */}
-      <div className="border-2 border-red-200 rounded-xl p-6 bg-red-50/50">
-        <div className="flex items-center gap-2 mb-4">
-          <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <h2 className="text-lg font-semibold text-red-900">Danger Zone</h2>
-        </div>
-        <p className="text-sm text-red-800 mb-4">These actions cannot be undone. Please be careful.</p>
-
-        <div className="space-y-3">
-          {/* Delete Data Button */}
-          <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-red-200">
+          {/* 2FA */}
+          <div className="mb-5 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-4">
             <div>
-              <p className="font-medium text-gray-900">Delete All Data</p>
-              <p className="text-sm text-gray-500">Delete all your financial data and history</p>
+              <p className="text-sm font-medium text-slate-800">Two-Factor Authentication</p>
+              <p className="text-xs text-slate-400 mt-0.5">Add an extra layer of security</p>
+              {twoFactorEnabled && (
+                <p className="mt-1 text-xs font-medium text-emerald-600 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Enabled
+                </p>
+              )}
             </div>
             <button
-              onClick={() => setDeleteDataConfirm(true)}
-              disabled={loading}
-              className="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              type="button"
+              onClick={handleToggle2FA}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                twoFactorEnabled ? 'bg-brand-primary' : 'bg-slate-200'
+              }`}
             >
-              Delete Data
+              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                twoFactorEnabled ? 'translate-x-5' : 'translate-x-1'
+              }`} />
             </button>
           </div>
 
-          {/* Delete Account Button */}
-          <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-red-200">
-            <div>
-              <p className="font-medium text-gray-900">Delete Account</p>
-              <p className="text-sm text-gray-500">Permanently delete your account and all associated data</p>
+          {/* Active Sessions */}
+          <div>
+            <p className="mb-3 text-sm font-medium text-slate-600">Active Sessions</p>
+            <div className="space-y-2">
+              {sessions.map((session) => (
+                <div key={session.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-3.5">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{session.device}</p>
+                    <p className="text-xs text-slate-400">{session.location} · {session.lastActive}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLogoutSession(session.id)}
+                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200"
+                  >
+                    End
+                  </button>
+                </div>
+              ))}
             </div>
-            <button
-              onClick={() => setDeleteConfirm(true)}
-              disabled={loading}
-              className="bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
-            >
-              Delete Account
-            </button>
           </div>
+        </article>
+
+        {/* ── Account Actions ── */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loading}
+            className={`${CARD} group flex items-center gap-3 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:border-sky-200/60 cursor-pointer disabled:opacity-50`}
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition-colors group-hover:bg-sky-50 group-hover:text-brand-primary">
+              <LogOut className="h-5 w-5" />
+            </span>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold text-slate-800">Log Out</p>
+              <p className="text-xs text-slate-400">Sign out of your account</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-brand-primary" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDeleteConfirm(true)}
+            disabled={loading}
+            className={`${CARD} group flex items-center gap-3 transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(239,68,68,0.08)] hover:border-red-200/60 cursor-pointer disabled:opacity-50`}
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-400 transition-colors group-hover:text-red-500">
+              <Trash2 className="h-5 w-5" />
+            </span>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold text-red-600">Delete Account</p>
+              <p className="text-xs text-slate-400">Permanently delete your account</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-red-400" />
+          </button>
         </div>
       </div>
 
-      {/* Delete Data Confirmation Modal */}
-      {deleteDataConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <svg className="w-6 h-6 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <h3 className="text-lg font-semibold text-gray-900">Delete All Data?</h3>
-            </div>
-            <p className="text-gray-600 mb-6">
-              This will permanently delete all your financial data and history. This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteDataConfirm(false)}
-                disabled={loading}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-900 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteData}
-                disabled={loading}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
-              >
-                {loading ? 'Deleting...' : 'Delete Data'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Account Confirmation Modal */}
+      {/* ── Delete Account Confirmation Modal ── */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <svg className="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <h3 className="text-lg font-semibold text-gray-900">Delete Account?</h3>
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget && !loading) setDeleteConfirm(false) }}
+        >
+          <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-500">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <h3 className="text-lg font-bold text-slate-900">Delete Account?</h3>
             </div>
-            <p className="text-gray-600 mb-2">
+            <p className="mb-2 text-sm text-slate-600">
               This will permanently delete your account and all associated data. This action cannot be undone.
             </p>
-            <p className="text-sm text-orange-600 font-medium mb-6">
+            <p className="mb-6 text-xs font-medium text-amber-600">
               Please make sure you want to proceed.
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setDeleteConfirm(false)}
                 disabled={loading}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-900 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+                className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleDeleteAccount}
                 disabled={loading}
-                className="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
               >
-                {loading ? 'Deleting...' : 'Delete Account'}
+                {loading ? 'Deleting…' : 'Delete Account'}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </section>
   )
 }
