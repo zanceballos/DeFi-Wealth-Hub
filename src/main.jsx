@@ -17,34 +17,37 @@ import {AppProvider} from "./context/AppContext.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import ForgotPasswordPage from "./pages/ForgetPasswordPage.jsx";
 import DocsPage from './pages/DocsPage.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 createRoot(document.getElementById('root')).render(
     <StrictMode>
-        <BrowserRouter>
-            <AuthProvider>
-                <AppProvider>
-                    <Routes>
+        <ErrorBoundary>
+            <BrowserRouter>
+                <AuthProvider>
+                    <AppProvider>
+                        <Routes>
                         {/* Public routes */}
-                        <Route path="/login" element={<LoginPage/>}/>
-                        <Route path="/signup" element={<SignUpPage/>}/>
-                        <Route path="/forgot-password" element={<ForgotPasswordPage/>}/>
-                        <Route path="/docs" element={<DocsPage/>}/>
+                            <Route path="/login" element={<LoginPage/>}/>
+                            <Route path="/signup" element={<SignUpPage/>}/>
+                            <Route path="/forgot-password" element={<ForgotPasswordPage/>}/>
+                            <Route path="/docs" element={<DocsPage/>}/>
                         {/* Protected routes */}
-                        <Route element={<ProtectedRoute/>}>
-                            <Route path="/onboarding" element={<OnboardingPage/>}/>
-                            <Route path="/" element={<App/>}>
-                                <Route index element={<Dashboard/>}/>
-                                <Route path="dashboard" element={<Dashboard/>}/>
-                                <Route path="advisory" element={<AdvisoryPage/>}/>
-                                <Route path="privacy" element={<Privacy/>}/>
-                                {/*<Route path="home" element={<Home/>}/>*/}
-                                {/*<Route path="portfolio" element={<Portfolio/>}/>*/}
-                                {/*<Route path="transactions" element={<Transactions/>}/>*/}
-                                <Route path="" element={<NotFoundPage/>}/>
+                            <Route element={<ProtectedRoute/>}>
+                                <Route path="/onboarding" element={<OnboardingPage/>}/>
+                                <Route path="/" element={<App/>}>
+                                    <Route index element={<Dashboard/>}/>
+                                    <Route path="dashboard" element={<Dashboard/>}/>
+                                    <Route path="advisory" element={<AdvisoryPage/>}/>
+                                    <Route path="privacy" element={<Privacy/>}/>
+                                    {/*<Route path="home" element={<Home/>}/>*/}
+                                    {/*<Route path="portfolio" element={<Portfolio/>}/>*/}
+                                    {/*<Route path="transactions" element={<Transactions/>}/>*/}
+                                    <Route path="" element={<NotFoundPage/>}/>
+                                </Route>
                             </Route>
-                        </Route>
-                    </Routes>
-                </AppProvider>
-            </AuthProvider>
-        </BrowserRouter>
+                        </Routes>
+                    </AppProvider>
+                </AuthProvider>
+            </BrowserRouter>
+        </ErrorBoundary>
     </StrictMode>,
 )
