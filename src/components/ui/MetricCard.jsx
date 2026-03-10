@@ -21,13 +21,21 @@ export default function MetricCard({
   accentColor = 'bg-brand-primary',
   icon: Icon,
   children,
+  onClick,
+  onIconClick,
 }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
     <article
       className="group relative"
-      onClick={() => children && setExpanded((v) => !v)}
+      onClick={() => {
+        if (typeof onClick === 'function') {
+          onClick()
+          return
+        }
+        if (children) setExpanded((v) => !v)
+      }}
     >
       {/* ── Main card ── */}
       <div
@@ -35,7 +43,7 @@ export default function MetricCard({
           'relative overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 ' +
           'shadow-[0_2px_12px_rgba(15,23,42,0.04)] ' +
           'transition-all duration-300 ease-out ' +
-          (children ? 'cursor-pointer ' : '') +
+          (children || onClick ? 'cursor-pointer ' : '') +
           'group-hover:-translate-y-1 group-hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] ' +
           'group-hover:border-sky-300/60'
         }
@@ -62,7 +70,14 @@ export default function MetricCard({
 
           {/* Icon circle */}
           {Icon && (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition-colors group-hover:bg-sky-50 group-hover:text-brand-primary">
+            <span
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition-colors group-hover:bg-sky-50 group-hover:text-brand-primary${onIconClick ? ' cursor-pointer hover:bg-sky-100' : ''}`}
+              {...(onIconClick ? {
+                onClick: (e) => { e.stopPropagation(); onIconClick() },
+                role: 'button',
+                tabIndex: 0,
+              } : {})}
+            >
               <Icon className="h-5 w-5" />
             </span>
           )}

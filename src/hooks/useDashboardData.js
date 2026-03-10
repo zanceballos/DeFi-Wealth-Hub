@@ -167,6 +167,9 @@ export default function useDashboardData() {
   const [transactionsViewModel, setTransactionsViewModel] = useState(() => buildTransactionsViewModel())
   const [emailTransactions, setEmailTransactions] = useState([])
 
+  // Per-symbol live SGD prices for crypto holdings (symbol → price)
+  const [liveCryptoPrices, setLiveCryptoPrices] = useState({})
+
   // Raw data
   const [raw, setRaw] = useState({ profile: null, statements: [], wellness: null, netWorthHistory: [], emailTransactions: [] })
 
@@ -571,7 +574,39 @@ export default function useDashboardData() {
       grand += manualHoldings.manualCash
     }
 
-    // Apply per-key live valuations if provided
+    // Add manual stocks at cost as baseline
+    let manualStocksCost = 0
+    for (const [symbol, qty] of manualHoldings.stocks) {
+      const profile = raw.profile
+      const inv = (profile?.manual_accounts?.investments ?? []).find(
+        i => (i?.asset ?? '').toUpperCase() === symbol
+      )
+      const lots = Array.isArray(inv?.lots) ? inv.lots : []
+      const costValue = lots.reduce((s, l) => s + safeNumber(l?.quantity) * safeNumber(l?.averageCost), 0)
+      if (costValue > 0) {
+        manualStocksCost += costValue
+      }
+    }
+    totals.stocks += manualStocksCost
+    grand += manualStocksCost
+
+    // Add manual crypto at cost as baseline
+    let manualCryptoCost = 0
+    for (const [symbol, qty] of manualHoldings.crypto) {
+      const profile = raw.profile
+      const inv = (profile?.manual_accounts?.investments ?? []).find(
+        i => (i?.asset ?? '').toUpperCase() === symbol && (i?.type || '').toLowerCase() === 'crypto'
+      )
+      const lots = Array.isArray(inv?.lots) ? inv.lots : []
+      const costValue = lots.reduce((s, l) => s + safeNumber(l?.quantity) * safeNumber(l?.averageCost), 0)
+      if (costValue > 0) {
+        manualCryptoCost += costValue
+      }
+    }
+    totals.crypto += manualCryptoCost
+    grand += manualCryptoCost
+
+    // Apply per-key live valuations if provided (replace manual cost with live value)
     const addByKey = {}
     // New interface: direct keys like { stocks, crypto }
     for (const k of Object.keys(totals)) {
@@ -588,6 +623,15 @@ export default function useDashboardData() {
 
     for (const [k, v] of Object.entries(addByKey)) {
       if (k in totals) {
+        // Remove cost baseline before adding live value to avoid double-counting
+        if (k === 'stocks' && manualStocksCost > 0) {
+          totals[k] -= manualStocksCost
+          grand -= manualStocksCost
+        }
+        if (k === 'crypto' && manualCryptoCost > 0) {
+          totals[k] -= manualCryptoCost
+          grand -= manualCryptoCost
+        }
         totals[k] += v
         grand += v
       }
@@ -603,7 +647,7 @@ export default function useDashboardData() {
     if (breakdown.length > 0) {
       setNetWorthBreakdown(breakdown)
     }
-  }, [raw.statements, manualHoldings])
+  }, [raw.statements, raw.profile, manualHoldings])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Periodic price updates via yfinance-defi
@@ -673,14 +717,16 @@ export default function useDashboardData() {
       const fxValid = Number.isFinite(fx) && fx > 0
 
       let liveCryptoValue = 0
+      const newPrices = {}
       await Promise.all(symbols.map(async (s, i) => {
         const priceUsd = Number(prices[i])
         if (!Number.isFinite(priceUsd) || priceUsd <= 0) return
         const priceSgd = fxValid ? priceUsd / fx : priceUsd
+        newPrices[s.toUpperCase()] = priceSgd
         const qty = manualHoldings.crypto.get(s) || 0
         liveCryptoValue += qty * priceSgd
       }))
-        console.log('liveCryptoValue', liveCryptoValue)
+      setLiveCryptoPrices(prev => ({ ...prev, ...newPrices }))
       rebuildBreakdown({ crypto: liveCryptoValue })
     }
 
@@ -706,6 +752,7 @@ export default function useDashboardData() {
     netWorthSeries,
     savingsDetail,
     netWorthBreakdown,
+    liveCryptoPrices,
 
     // Wallet & Budget & Transactions tabs
     walletViewModel,

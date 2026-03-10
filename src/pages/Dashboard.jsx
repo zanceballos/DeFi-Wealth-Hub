@@ -20,6 +20,7 @@ export default function Dashboard() {
         netWorthSeries,
         savingsDetail,
         netWorthBreakdown,
+        liveCryptoPrices,
         walletViewModel,
         budgetViewModel,
         transactionsViewModel,
@@ -62,7 +63,7 @@ export default function Dashboard() {
             <div
                 className="pointer-events-none fixed bottom-0 left-0 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl"/>
 
-            <div className="sticky top-0 z-20 mb-6 rounded-2xl border border-white/70 bg-white/70 p-2 backdrop-blur-xl">
+            <div className="sticky top-0 mb-6 rounded-2xl border border-white/70 bg-white/70 p-2 backdrop-blur-xl">
                 <div className="flex overflow-x-auto gap-1 pb-1 scrollbar-none">
                     {TABS.map((tab) => {
                         const locked = tab.requiresAccounts && !hasAccounts
@@ -103,6 +104,7 @@ export default function Dashboard() {
                         netWorthSeries={netWorthSeries}
                         savingsDetail={savingsDetail}
                         netWorthBreakdown={netWorthBreakdown}
+                        liveCryptoPrices={liveCryptoPrices}
                         todayLabel={todayLabel}
                         isEmpty={isEmpty}
                         onUploadClick={openOverlay}
