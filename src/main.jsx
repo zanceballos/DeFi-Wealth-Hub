@@ -18,6 +18,8 @@ import Privacy from "./pages/Privacy.jsx";
 import ForgotPasswordPage from "./pages/ForgetPasswordPage.jsx";
 import DocsPage from './pages/DocsPage.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import HelpCentre from "./pages/HelpCentre.jsx";
+import SettingsPage from "./pages/Settings.jsx";
 createRoot(document.getElementById('root')).render(
     <StrictMode>
         <ErrorBoundary>
@@ -38,6 +40,8 @@ createRoot(document.getElementById('root')).render(
                                     <Route path="dashboard" element={<Dashboard/>}/>
                                     <Route path="advisory" element={<AdvisoryPage/>}/>
                                     <Route path="privacy" element={<Privacy/>}/>
+                                      <Route path="help" element={<HelpCentre/>}/>
+                                <Route path="settings" element={<SettingsPage/>}/>
                                     {/*<Route path="home" element={<Home/>}/>*/}
                                     {/*<Route path="portfolio" element={<Portfolio/>}/>*/}
                                     {/*<Route path="transactions" element={<Transactions/>}/>*/}
