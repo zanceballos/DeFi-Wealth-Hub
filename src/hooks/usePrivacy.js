@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuthContext } from './useAuthContext'
-import { recomputeWellness, recalculateNetWorth, resetUserToEmpty } from '../services/financialDataService'
+import { recomputeAll, resetUserToEmpty } from '../services/financialDataService'
 
 export function usePrivacy() {
   const { user } = useAuthContext()
@@ -97,7 +97,7 @@ export function usePrivacy() {
         await resetUserToEmpty(user.uid)
       } else {
         // Recompute wellness + net worth with remaining data
-        await recalculateNetWorth(user.uid)
+        await recomputeAll(user.uid)
       }
       // Clear advisory cache
       try {
@@ -135,7 +135,7 @@ export function usePrivacy() {
       if (emailTxCount === 0 && !hasManual) {
         await resetUserToEmpty(user.uid)
       } else {
-        await recalculateNetWorth(user.uid)
+        await recomputeAll(user.uid)
       }
       // Clear advisory cache
       try {
@@ -269,7 +269,7 @@ export function usePrivacy() {
       if (statements.length === 0 && !hasManual) {
         await resetUserToEmpty(user.uid)
       } else {
-        await recalculateNetWorth(user.uid)
+        await recomputeAll(user.uid)
       }
       try {
         sessionStorage.removeItem('dwh_advisory')
@@ -304,7 +304,7 @@ export function usePrivacy() {
       if (statements.length === 0 && remaining === 0 && !hasManual) {
         await resetUserToEmpty(user.uid)
       } else {
-        await recalculateNetWorth(user.uid)
+        await recomputeAll(user.uid)
       }
       try {
         sessionStorage.removeItem('dwh_advisory')
@@ -326,8 +326,18 @@ export function usePrivacy() {
   }, {})
 
   const totalFiles        = statements.length
-  const totalTransactions = statements.reduce((s, st) => s + (st.transactions_count || 0), 0)
-  const totalNetWorth     = statements.reduce((s, st) => s + (st.net_worth_contribution || 0), 0)
+  const totalTransactions = statements.reduce((s, st) => s + (st.transactions_count || 0), 0) + emailTxCount
+
+  // Privacy-only net worth: only data the user uploaded (statements + email tx)
+  // Does NOT include manual accounts — those feed into the dashboard wellness score separately
+  // Clamped to 0 — never show negative net worth
+  const totalNetWorth = useMemo(() => {
+    const stmtNW = statements.reduce((s, st) => s + (Number(st.net_worth_contribution) || 0), 0)
+    const emailNW = emailTransactions
+      .filter((tx) => tx.status !== 'rejected')
+      .reduce((s, tx) => s + (Number(tx.amount) || 0), 0)
+    return Math.max(0, stmtNW + emailNW)
+  }, [statements, emailTransactions])
 
   return {
     statements,

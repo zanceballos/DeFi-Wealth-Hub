@@ -152,7 +152,7 @@ export default function TransactionsTab({ viewModel = {}, onUploadClick }) {
         <StatCard
           title="Total Transactions"
           value={liveSummary.totalCount}
-          valueColor="text-teal-500"
+          valueColor="black"
           tooltip="Count of all transactions from statements and email imports."
         />
         <StatCard

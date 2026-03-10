@@ -213,7 +213,7 @@ export async function recomputeWellness(uid, _options = {}) {
   const emailTransactions = []
   emailTxSnap.forEach((d) => emailTransactions.push({ id: d.id, ...d.data() }))
   const approvedEmailTx = emailTransactions.filter(
-    (tx) => tx.status === 'approved' && !tx.deleted,
+    (tx) => tx.status !== 'rejected' && !tx.deleted,
   )
 
   // ---- Manual accounts (Source A) ----
@@ -225,21 +225,32 @@ export async function recomputeWellness(uid, _options = {}) {
   let totalNetWorth = 0
   let totalCash = 0
   let totalCrypto = 0
+  let totalStocks = 0
   let totalTokenised = 0
   let totalUnregulated = 0
   let largestContribution = 0
 
+  // Track manual subtotals for wealth_summary
+  let manualCash = 0
+  let manualCrypto = 0
+  let manualStocks = 0
+  let manualOther = 0
+
   const UNREGULATED_SOURCES = new Set(['crypto', 'other'])
+  const CASH_TYPES = new Set(['cash', 'savings', 'checking'])
 
   // Source B: statements
+  let statementsNetWorth = 0
   for (const stmt of active) {
     const contribution = Number(stmt.net_worth_contribution) || 0
+    statementsNetWorth += contribution
     totalNetWorth += contribution
     if (contribution > largestContribution) largestContribution = contribution
 
     const breakdown = stmt.asset_class_breakdown ?? {}
     totalCash += Number(breakdown.cash) || 0
     totalCrypto += Number(breakdown.crypto) || 0
+    totalStocks += Number(breakdown.stocks) || 0
     totalTokenised += Number(breakdown.tokenised) || 0
 
     if (UNREGULATED_SOURCES.has(stmt.source_type)) {
@@ -250,12 +261,27 @@ export async function recomputeWellness(uid, _options = {}) {
   // Source A: manual cash accounts
   for (const acc of manualAccounts) {
     const bal = Number(acc.balance) || 0
-    totalCash += bal
+    const accType = (acc.type || '').toLowerCase()
+
+    if (CASH_TYPES.has(accType)) {
+      manualCash += bal
+      totalCash += bal
+    } else if (accType === 'crypto') {
+      manualCrypto += bal
+      totalCrypto += bal
+      totalUnregulated += bal
+    } else if (accType === 'stocks') {
+      manualStocks += bal
+      totalStocks += bal
+    } else {
+      manualOther += bal
+    }
+
     totalNetWorth += bal
     if (bal > largestContribution) largestContribution = bal
   }
 
-  // Source A: manual investments
+  // Source A: manual investments (lot-based positions)
   for (const inv of manualInvestments) {
     const lots = Array.isArray(inv?.lots) ? inv.lots : []
     const assetTotal = lots.reduce((sum, lot) => {
@@ -270,13 +296,18 @@ export async function recomputeWellness(uid, _options = {}) {
 
     const t = (inv?.type || '').toLowerCase()
     if (t === 'crypto') {
+      manualCrypto += assetTotal
       totalCrypto += assetTotal
       totalUnregulated += assetTotal
+    } else {
+      manualStocks += assetTotal
+      totalStocks += assetTotal
     }
-    // stocks/other: counted toward net worth but not crypto/unregulated
   }
 
-  // Source C: approved email transactions (net inflow/outflow affects cash position)
+  const manualTotal = manualCash + manualCrypto + manualStocks + manualOther
+
+  // Source C: non-rejected email transactions (net inflow/outflow affects cash position)
   let emailNetCash = 0
   for (const tx of approvedEmailTx) {
     const amt = Number(tx.amount) || 0
@@ -285,6 +316,9 @@ export async function recomputeWellness(uid, _options = {}) {
   // Email net cash flow adjusts total cash (can be negative)
   totalCash += emailNetCash
   totalNetWorth += emailNetCash
+
+  // Clamp net worth to 0 — never negative
+  totalNetWorth = Math.max(0, totalNetWorth)
 
   const cashBufferMonths =
     monthlyExpenses > 0 ? parseFloat((totalCash / monthlyExpenses).toFixed(2)) : 0
@@ -369,6 +403,21 @@ export async function recomputeWellness(uid, _options = {}) {
   // Save to /users/{uid}/wellness/current
   await setDoc(doc(db, 'users', uid, 'wellness', 'current'), wellnessDoc)
 
+  // Save wealth summary for wallet tab and other consumers
+  await setDoc(
+    doc(db, 'users', uid, 'wealth_summary', 'current'),
+    {
+      total_net_worth: totalNetWorth,
+      total_cash: totalCash,
+      total_crypto: totalCrypto,
+      total_stocks: totalStocks,
+      manual_total: manualTotal,
+      statements_total: statementsNetWorth,
+      updated_at: serverTimestamp(),
+    },
+    { merge: true },
+  )
+
   return wellnessDoc
 }
 
@@ -404,17 +453,17 @@ export async function upsertNetWorthHistory(uid, date, netWorthValue) {
 }
 
 // ---------------------------------------------------------------------------
-// 4b. recalculateNetWorth (convenience — recomputes wellness + upserts history)
+// 4b. recomputeAll — single entry-point for every data-mutation event
 // ---------------------------------------------------------------------------
 
 /**
  * Recompute wellness and upsert net-worth history for the current month.
- * Idempotent — safe to call multiple times.
+ * Idempotent — safe to call after any data mutation.
  *
  * @param {string} uid
  * @returns {Promise<{wellness: object, historyEntry: object}>}
  */
-export async function recalculateNetWorth(uid) {
+export async function recomputeAll(uid) {
   if (!uid) return { wellness: null, historyEntry: null }
   const wellness = await recomputeWellness(uid)
   const historyEntry = await upsertNetWorthHistory(
@@ -424,6 +473,9 @@ export async function recalculateNetWorth(uid) {
   )
   return { wellness, historyEntry }
 }
+
+/** @deprecated Use recomputeAll instead */
+export const recalculateNetWorth = recomputeAll
 
 // ---------------------------------------------------------------------------
 // 4c. resetUserToEmpty — clear wellness + history when all data is deleted

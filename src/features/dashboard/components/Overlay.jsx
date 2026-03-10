@@ -16,14 +16,12 @@ import {
   Zap,
   ChevronDown,
 } from "lucide-react";
-import {
-  recomputeWellness,
-  upsertNetWorthHistory,
-} from "../../../services/financialDataService.js";
+import { recomputeAll } from "../../../services/financialDataService.js";
 import { ingestStatementToFirestore } from "../../../services/statementIngestionService.js";
 import { useAuthContext } from "../../../hooks/useAuthContext.js";
 import { safeFetchJson } from "../../../lib/safeFetch.js";
 import CategoryBadge from "../../../components/ui/CategoryBadge.jsx";
+import { normalizeCategory } from "../../../services/dashboardViewModel.js";
 
 const API_BASE_URL =
   import.meta.env.VITE_PIPELINE_API_BASE_URL ??
@@ -886,9 +884,7 @@ function toRows(rawRows) {
       id: row.id ?? row.row_id ?? row.rowId ?? `local-${stamp}-${index}`,
       normalizedPayload: {
         ...payload,
-        category: payload.category
-          ? payload.category.charAt(0).toUpperCase() + payload.category.slice(1)
-          : payload.category,
+        category: normalizeCategory(payload.category),
       },
       fieldConfidence: row.field_confidence ?? row.fieldConfidence ?? {},
       rowConfidence: row.row_confidence ?? row.rowConfidence ?? null,
@@ -1264,12 +1260,7 @@ export default function Overlay({
             currency: rowsToSave[0]?.normalizedPayload?.currency ?? "SGD",
           },
         );
-      const wellness = await recomputeWellness(uid);
-      const historyEntry = await upsertNetWorthHistory(
-        uid,
-        new Date(),
-        wellness.key_metrics?.net_worth ?? 0,
-      );
+      const { wellness, historyEntry } = await recomputeAll(uid);
       setFirebaseSaveResult({
         statement: { id: statementId, ...statementData },
         wellness,

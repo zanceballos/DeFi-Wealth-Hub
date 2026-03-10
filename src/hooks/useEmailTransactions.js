@@ -12,7 +12,7 @@ import { db } from '../lib/firebase.js'
 import { useAuthContext } from './useAuthContext.js'
 import { subscribeEmailTransactions, approveTransaction, rejectTransaction, editTransaction } from '../services/emailTransactionService.js'
 import { syncGmailTransactions, isTokenValid } from '../services/gmailService.js'
-import { recalculateNetWorth } from '../services/financialDataService.js'
+import { recomputeAll } from '../services/financialDataService.js'
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -49,10 +49,7 @@ export default function useEmailTransactions({ enabled = true } = {}) {
       }, { merge: true })
       // Trigger recalculation if new transactions were saved
       if (result.newCount > 0) {
-        // Fire-and-forget recalculation
-        recalculateNetWorth(uid).catch((err) =>
-          console.error('[useEmailTransactions] recalc failed:', err),
-        )
+        await recomputeAll(uid)
         // Clear advisory cache so next visit re-generates
         try {
           sessionStorage.removeItem('dwh_advisory')
@@ -87,21 +84,25 @@ export default function useEmailTransactions({ enabled = true } = {}) {
   const approve = useCallback(
     async (txId) => {
       await approveTransaction(uid, txId)
-      recalculateNetWorth(uid).catch(() => {})
+      await recomputeAll(uid)
       try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
     },
     [uid],
   )
 
   const reject = useCallback(
-    (txId) => rejectTransaction(uid, txId),
+    async (txId) => {
+      await rejectTransaction(uid, txId)
+      await recomputeAll(uid)
+      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+    },
     [uid],
   )
 
   const edit = useCallback(
     async (txId, updates) => {
       await editTransaction(uid, txId, updates)
-      recalculateNetWorth(uid).catch(() => {})
+      await recomputeAll(uid)
       try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
     },
     [uid],

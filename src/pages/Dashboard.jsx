@@ -2,7 +2,6 @@ import {useState, useCallback, useEffect} from 'react'
 import { Lock } from 'lucide-react'
 import OverviewTab from '../features/dashboard/components/OverviewTab.jsx'
 import BudgetingTab from '../features/dashboard/components/BudgetingTab.jsx'
-import WalletTab from '../features/dashboard/components/WalletTab.jsx'
 import Overlay from '../features/dashboard/components/Overlay.jsx'
 import {TABS} from "../features/dashboard/tabs.js";
 import useDashboardData from "../hooks/useDashboardData.js";
@@ -21,7 +20,6 @@ export default function Dashboard() {
         savingsDetail,
         netWorthBreakdown,
         liveCryptoPrices,
-        walletViewModel,
         budgetViewModel,
         transactionsViewModel,
         excludedFingerprints,
@@ -111,20 +109,12 @@ export default function Dashboard() {
                         onFinished={handleOnboardingFinished}
                         onRefresh={refresh}
                     />
-                ) : activeTab === 'budgeting' ? (
+                ) : (
                     <BudgetingTab
                         viewModel={budgetViewModel}
                         transactionsViewModel={transactionsViewModel}
                         excludedFingerprints={excludedFingerprints}
                         updateExcludedFingerprints={updateExcludedFingerprints}
-                        onUploadClick={openOverlay}
-                    />
-                ) : (
-                    <WalletTab
-                        walletAllocation={walletViewModel.allocation}
-                        walletRows={walletViewModel.rows}
-                        totalNetWorth={walletViewModel.totalNetWorth}
-                        emptyState={walletViewModel.emptyState}
                         onUploadClick={openOverlay}
                     />
                 )}

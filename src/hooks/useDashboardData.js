@@ -47,6 +47,7 @@ import {
   safeNumber,
 } from "../services/dashboardViewModel.js";
 import { getYfPrice } from "../services/marketDataService.js";
+import { recomputeAll } from "../services/financialDataService.js";
 
 // ── Empty defaults (no mock data — real values come from Firestore) ──
 const EMPTY_HERO = {
@@ -272,7 +273,11 @@ export default function useDashboardData() {
         buildWalletViewModel({
           statements,
           wellness,
-          emailTransactions: emailTx,
+          transactions: buildTransactionsViewModel({
+            statements,
+            emailTransactions: emailTx,
+            excludedFingerprints: excludedFpRef.current,
+          }).transactions,
         }),
       );
       setBudgetViewModel(
@@ -283,13 +288,15 @@ export default function useDashboardData() {
   );
 
   // ── Fetch ─────────────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
+  const hasLoadedOnce = useRef(false);
+
+  const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!uid) {
       setIsEmpty(true);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
@@ -411,17 +418,12 @@ export default function useDashboardData() {
       // ════════════════════════════════════════════════════════════════════
       applyWellness(wellness, profile, statements, emailTxItems);
 
-      // Asset breakdown (overview card)
-      if (activeStmts.length > 0) {
-        const totals = {
-          cash: 0,
-          stocks: 0,
-          crypto: 0,
-          property: 0,
-          tokenised: 0,
-          bonds: 0,
-        };
+      // Asset breakdown (overview card) — statements + manual + email tx
+      {
+        const totals = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 };
         let grandTotal = 0;
+
+        // Source B: statements
         for (const stmt of activeStmts) {
           const bd = stmt.asset_class_breakdown ?? {};
           for (const key of Object.keys(totals)) {
@@ -430,6 +432,42 @@ export default function useDashboardData() {
             grandTotal += v;
           }
         }
+
+        // Source A: manual accounts
+        const manualAccounts = profile?.manual_accounts?.accounts;
+        const manualInvestments = profile?.manual_accounts?.investments;
+        const manualCash = Array.isArray(manualAccounts)
+          ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
+          : 0;
+        let manualStocks = 0;
+        let manualCrypto = 0;
+        if (Array.isArray(manualInvestments)) {
+          for (const inv of manualInvestments) {
+            const lots = Array.isArray(inv?.lots) ? inv.lots : [];
+            const assetTotal = lots.reduce((sum, lot) => {
+              const qty = safeNumber(lot?.quantity);
+              const avg = safeNumber(lot?.averageCost);
+              const val = qty * avg;
+              return sum + (Number.isFinite(val) ? val : 0);
+            }, 0);
+            const t = (inv?.type || "").toLowerCase();
+            if (t === "crypto") manualCrypto += assetTotal;
+            else manualStocks += assetTotal;
+          }
+        }
+        if (manualCash > 0) { totals.cash += manualCash; grandTotal += manualCash; }
+        if (manualStocks > 0) { totals.stocks += manualStocks; grandTotal += manualStocks; }
+        if (manualCrypto > 0) { totals.crypto += manualCrypto; grandTotal += manualCrypto; }
+
+        // Source C: email transactions (non-rejected net cash inflow/outflow)
+        const emailNetCash = emailTxItems
+          .filter((tx) => tx.status !== "rejected" && !tx.deleted)
+          .reduce((sum, tx) => sum + safeNumber(tx.amount), 0);
+        if (emailNetCash !== 0) {
+          totals.cash += emailNetCash;
+          grandTotal += emailNetCash;
+        }
+
         const breakdown = Object.entries(totals)
           .filter(([, v]) => v > 0)
           .map(([key, v]) => ({
@@ -440,97 +478,6 @@ export default function useDashboardData() {
           }));
         if (breakdown.length > 0) {
           setNetWorthBreakdown(breakdown);
-        }
-      }
-
-      // ── Manual data asset breakdown (cash from user manual_accounts) ──
-      // Start: line 322 onwards as requested
-      const manualAccounts = profile?.manual_accounts?.accounts;
-      const manualInvestments = profile?.manual_accounts?.investments;
-
-      // Aggregate manual cash from accounts (if present)
-      const manualCash = Array.isArray(manualAccounts)
-        ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
-        : 0;
-
-      // Aggregate manual investments into stocks and crypto buckets (sum of lots: quantity * averageCost)
-      let manualStocks = 0;
-      let manualCrypto = 0;
-      if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
-        for (const inv of manualInvestments) {
-          const lots = Array.isArray(inv?.lots) ? inv.lots : [];
-          const assetTotal = lots.reduce((sum, lot) => {
-            const qty = safeNumber(lot?.quantity);
-            const avg = safeNumber(lot?.averageCost);
-            const val = qty * avg;
-            return sum + (Number.isFinite(val) ? val : 0);
-          }, 0);
-
-          // normalise type to buckets
-          const t = (inv?.type || "").toLowerCase();
-          if (t === "crypto") {
-            manualCrypto += assetTotal;
-          } else if (
-            t === "stocks_etfs" ||
-            t === "stocks_etf" ||
-            t === "stock_etf" ||
-            t === "stocks"
-          ) {
-            manualStocks += assetTotal;
-          } else {
-            // default unknown types to stocks bucket to avoid losing value
-            manualStocks += assetTotal;
-          }
-        }
-      }
-
-      // If we have any manual totals (cash/stocks/crypto), recalc totals including them and recompute percentages
-      if (manualCash > 0 || manualStocks > 0 || manualCrypto > 0) {
-        const totals2 = {
-          cash: 0,
-          stocks: 0,
-          crypto: 0,
-          property: 0,
-          tokenised: 0,
-          bonds: 0,
-        };
-        let grandTotal2 = 0;
-
-        // Include statement-based totals (same logic as above)
-        for (const stmt of activeStmts) {
-          const bd = stmt.asset_class_breakdown ?? {};
-          for (const key of Object.keys(totals2)) {
-            const v = safeNumber(bd[key]);
-            totals2[key] += v;
-            grandTotal2 += v;
-          }
-        }
-
-        // Add manual figures on top of statement totals
-        if (manualCash > 0) {
-          totals2.cash += manualCash;
-          grandTotal2 += manualCash;
-        }
-        if (manualStocks > 0) {
-          totals2.stocks += manualStocks;
-          grandTotal2 += manualStocks;
-        }
-        if (manualCrypto > 0) {
-          totals2.crypto += manualCrypto;
-          grandTotal2 += manualCrypto;
-        }
-
-        const breakdown2 = Object.entries(totals2)
-          .filter(([, v]) => v > 0)
-          .map(([key, v]) => ({
-            color: BREAKDOWN_COLORS[key] ?? "bg-slate-400",
-            label: BREAKDOWN_LABELS[key] ?? key,
-            value: fmtCurrency(v),
-            percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
-          }));
-
-        if (breakdown2.length > 0) {
-          setNetWorthBreakdown(breakdown2);
         }
       }
 
@@ -560,12 +507,18 @@ export default function useDashboardData() {
       // Keep mock / previous data as fallback
     } finally {
       setLoading(false);
+      hasLoadedOnce.current = true;
     }
   }, [uid, applyWellness]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const refresh = useCallback(
+    () => fetchData({ silent: hasLoadedOnce.current }),
+    [fetchData],
+  );
 
   // ── Real-time listener for emailTransactions (so Gmail sync updates UI) ──
   useEffect(() => {
@@ -592,7 +545,7 @@ export default function useDashboardData() {
     return unsub;
   }, [uid]);
 
-  // ── Real-time listener for wellness (so recalculateNetWorth updates overview + wallet + budget) ──
+  // ── Real-time listener for wellness (so recomputeAll updates overview + wallet + budget) ──
   useEffect(() => {
     if (!uid) return;
     const wellnessRef = doc(db, "users", uid, "wellness", "current");
@@ -609,6 +562,27 @@ export default function useDashboardData() {
     });
     return unsub;
   }, [uid, applyWellness]);
+
+  // ── Real-time listener for user profile (manual_accounts changes → recompute) ──
+  const prevManualRef = useRef(null);
+  useEffect(() => {
+    if (!uid) return;
+    const userDocRef = doc(db, "users", uid);
+    const unsub = onSnapshot(userDocRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      profileRef.current = data;
+      // Only trigger recompute when manual_accounts actually changes
+      const manualJson = JSON.stringify(data.manual_accounts ?? {});
+      if (prevManualRef.current !== null && prevManualRef.current !== manualJson) {
+        recomputeAll(uid).catch((err) =>
+          console.error("[useDashboardData] manual_accounts recompute failed:", err),
+        );
+      }
+      prevManualRef.current = manualJson;
+    });
+    return unsub;
+  }, [uid]);
 
   // ── Real-time listener for net-worth history (keeps chart + series in sync) ──
   useEffect(() => {
@@ -741,6 +715,16 @@ export default function useDashboardData() {
     totals.crypto += manualCryptoCost
     grand += manualCryptoCost
 
+    // Source C: email transactions (non-rejected net cash inflow/outflow)
+    const emailTxItems = Array.isArray(raw.emailTransactions) ? raw.emailTransactions : []
+    const emailNetCash = emailTxItems
+      .filter(tx => tx.status !== 'rejected' && !tx.deleted)
+      .reduce((sum, tx) => sum + safeNumber(tx.amount), 0)
+    if (emailNetCash !== 0) {
+      totals.cash += emailNetCash
+      grand += emailNetCash
+    }
+
     // Apply per-key live valuations if provided (replace manual cost with live value)
     const addByKey = {}
     // New interface: direct keys like { stocks, crypto }
@@ -782,7 +766,7 @@ export default function useDashboardData() {
     if (breakdown.length > 0) {
       setNetWorthBreakdown(breakdown)
     }
-  }, [raw.statements, raw.profile, manualHoldings])
+  }, [raw.statements, raw.profile, raw.emailTransactions, manualHoldings])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Periodic price updates via yfinance-defi
@@ -916,6 +900,6 @@ export default function useDashboardData() {
     // Raw Firestore data
     raw,
 
-    refresh: fetchData,
+    refresh,
   };
 }

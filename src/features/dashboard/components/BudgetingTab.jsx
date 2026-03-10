@@ -5,6 +5,7 @@ import {
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase.js'
 import { txFingerprint } from '../../../services/dashboardViewModel.js'
+import { useRecompute } from '../../../hooks/useRecompute.js'
 import StatCard from "../../../components/ui/StatCard.jsx";
 import InfoTooltip from "../../../components/ui/InfoTooltip.jsx";
 import TransactionsTable from "../../../components/TransactionsTable.jsx";
@@ -88,6 +89,7 @@ export default function BudgetingTab({
   const { update } = useFirestore("users");
   const gmail = useGmailLink();
   const emailTx = useEmailTransactions({ enabled: gmail.gmailLinked });
+  const { triggerRecompute } = useRecompute();
 
   const [budgetInput, setBudgetInput] = useState("");
   const [budget, setBudget] = useState(
@@ -134,19 +136,20 @@ export default function BudgetingTab({
           category: updates.category,
           amount: updates.amount,
         });
+        triggerRecompute();
       }
     },
-    [user?.uid, emailTx]
+    [user?.uid, emailTx, triggerRecompute]
   );
 
   const handleCategoryChange = useCallback(
     (tx, newCategory) => {
       if (!user?.uid) return;
       if (tx.source === "email" && tx.id) {
-        emailTx.edit(tx.id, { category: newCategory });
+        emailTx.edit(tx.id, { category: newCategory }).then(() => triggerRecompute());
       }
     },
-    [user?.uid, emailTx]
+    [user?.uid, emailTx, triggerRecompute]
   );
 
   const handleExclude = useCallback(
@@ -157,11 +160,12 @@ export default function BudgetingTab({
       updateExcludedFingerprints?.(next);
       try {
         await updateDoc(doc(db, 'users', user.uid), { excluded_tx_fingerprints: next });
+        triggerRecompute();
       } catch (err) {
         console.error('Failed to persist excluded fingerprint:', err);
       }
     },
-    [user?.uid, excludedFingerprints, updateExcludedFingerprints],
+    [user?.uid, excludedFingerprints, updateExcludedFingerprints, triggerRecompute],
   );
 
   const handleRestore = useCallback(
@@ -172,11 +176,12 @@ export default function BudgetingTab({
       updateExcludedFingerprints?.(next);
       try {
         await updateDoc(doc(db, 'users', user.uid), { excluded_tx_fingerprints: next });
+        triggerRecompute();
       } catch (err) {
         console.error('Failed to persist restored fingerprint:', err);
       }
     },
-    [user?.uid, excludedFingerprints, updateExcludedFingerprints],
+    [user?.uid, excludedFingerprints, updateExcludedFingerprints, triggerRecompute],
   );
 
   const liveSummary = useMemo(() => {
@@ -449,19 +454,19 @@ export default function BudgetingTab({
           <StatCard
             title="Total Transactions"
             value={liveSummary.totalCount}
-            valueColor="text-teal-500"
+            valueColor="text-gray-900"
             tooltip="Count of all debit and credit entries from statements and email imports."
           />
           <StatCard
             title="Total Inflow"
             value={liveSummary.totalInflow}
-            valueColor="text-teal-500"
+            valueColor="text-gray-900"
             tooltip="Sum of all positive (credit) transactions — salary, transfers in, refunds."
           />
           <StatCard
             title="Total Outflow"
             value={liveSummary.totalOutflow}
-            valueColor="text-teal-500"
+            valueColor="text-gray-900"
             tooltip="Sum of all negative (debit) transactions — purchases, bills, transfers out."
           />
         </div>

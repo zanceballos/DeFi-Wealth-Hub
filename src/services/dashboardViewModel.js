@@ -51,21 +51,43 @@ function formatCurrencySGD2(value) {
 
 const ASSET_CLASSES = [
   "cash",
-  "bonds",
   "stocks",
   "crypto",
-  "property",
-  "tokenised",
 ];
 
 const ASSET_CLASS_META = {
-  cash: { name: "Cash", color: "#3B82F6" },
-  bonds: { name: "Bonds", color: "#10B981" },
-  stocks: { name: "Stocks", color: "#6366F1" },
-  crypto: { name: "Crypto", color: "#F59E0B" },
-  property: { name: "Property", color: "#EF4444" },
-  tokenised: { name: "Tokenised", color: "#8B5CF6" },
+  cash:   { name: "Cash",   color: "#2081C3" },
+  stocks: { name: "Stocks", color: "#10b981" },
+  crypto: { name: "Crypto", color: "#f59e0b" },
 };
+
+function normalizeAsset(raw) {
+  const s = (raw ?? "").toLowerCase().trim();
+  if (s === "cash") return "cash";
+  if (s === "stocks") return "stocks";
+  if (s === "crypto") return "crypto";
+  return null;
+}
+
+// ─── Category normalisation ─────────────────────────────────────────────────
+
+const VALID_CATEGORIES = [
+  "Food", "Transport", "Shopping", "Entertainment", "Utilities",
+  "Healthcare", "Housing", "Groceries", "Dining", "Travel",
+  "Education", "Investment", "Income", "Transfer", "Fees",
+  "Insurance", "Savings", "Cash", "CPF", "Tax",
+  "Dividend", "Interest", "Other",
+];
+
+const CATEGORY_LOOKUP = Object.fromEntries(
+  VALID_CATEGORIES.map((c) => [c.toLowerCase(), c]),
+);
+
+export function normalizeCategory(raw) {
+  if (!raw) return "Unknown";
+  const key = String(raw).trim().toLowerCase();
+  return CATEGORY_LOOKUP[key] ?? "Unknown";
+}
 
 // ─── Category colours ───────────────────────────────────────────────────────
 
@@ -148,89 +170,106 @@ export function deriveRegulatedLabel(statement) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * buildWalletViewModel({ profile, statements, wellness, emailTransactions })
+ * buildWalletViewModel({ statements, wellness, transactions })
  *
  * Returns a UI-ready object for the Wallet page:
  *   { allocation, totalNetWorth, rows, emptyState }
+ *
+ * transactions = flat array from buildTransactionsViewModel().transactions
  */
 export function buildWalletViewModel({
   statements,
   wellness,
-  emailTransactions,
+  transactions,
 } = {}) {
   const active = activeStatements(statements);
 
-  // ── Email-transaction net cash (approved, non-deleted) ────────────────
-  const validEmailTx = Array.isArray(emailTransactions)
-    ? emailTransactions.filter((tx) => !tx.deleted)
-    : [];
-  let emailNetCash = 0;
-  for (const tx of validEmailTx) {
-    emailNetCash += safeNumber(tx.amount);
+  // ── Total net worth from statements ───────────────────────────────────
+  let stmtNetWorth = 0;
+  for (const stmt of active) {
+    stmtNetWorth += safeNumber(stmt.net_worth_contribution);
   }
+  const totalNetWorth =
+    safeNumber(wellness?.key_metrics?.net_worth) || stmtNetWorth;
 
+  const allTx = Array.isArray(transactions) ? transactions : [];
   const hasAnyData =
+    allTx.length > 0 ||
     active.length > 0 ||
-    validEmailTx.length > 0 ||
     safeNumber(wellness?.key_metrics?.net_worth) > 0;
 
-  // ── Asset totals ──────────────────────────────────────────────────────
-  const totals = sumAssetBreakdown(statements);
+  // ── Aggregate transactions by asset class ─────────────────────────────
+  const RISK = { cash: "Core", stocks: "Growth", crypto: "Speculative" };
+  const REG = {
+    cash: "✓ Regulated",
+    stocks: "✓ Regulated",
+    crypto: "⚠ Unregulated",
+  };
 
-  // Email transactions contribute to the cash bucket
-  if (emailNetCash !== 0) {
-    totals.cash += emailNetCash;
+  const groups = {};
+  for (const key of ASSET_CLASSES) {
+    groups[key] = { total: 0, platforms: {} };
   }
 
-  const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+  for (const tx of allTx) {
+    if (tx.excluded) continue;
+    const assetKey = normalizeAsset(tx.asset);
+    if (!assetKey) continue;
+    if (tx.direction === "credit") {
+      groups[assetKey].total += Math.abs(tx.amount);
+    }
+    const plat = tx.platform ?? tx.merchant ?? tx.sourceLabel ?? "—";
+    groups[assetKey].platforms[plat] = (groups[assetKey].platforms[plat] || 0) + 1;
+  }
 
-  // Use wellness net_worth if available, otherwise sum from breakdowns
-  const totalNetWorth =
-    safeNumber(wellness?.key_metrics?.net_worth) || grandTotal;
+  // If no credit transactions were found, fall back to statement asset_class_breakdown
+  const hasTxData = ASSET_CLASSES.some((k) => groups[k].total > 0);
+  if (!hasTxData) {
+    const totals = sumAssetBreakdown(statements);
+    for (const key of ASSET_CLASSES) {
+      groups[key].total = totals[key];
+    }
+  }
 
-  // ── Allocation array ──────────────────────────────────────────────────
-  const allocation = ASSET_CLASSES.map((key) => {
-    const meta = ASSET_CLASS_META[key];
-    const amount = totals[key];
-    return {
-      name: meta.name,
-      value: totalNetWorth > 0 ? Math.round((amount / totalNetWorth) * 100) : 0,
-      color: meta.color,
-      amount,
-    };
-  });
+  const grandTotal = ASSET_CLASSES.reduce((s, k) => s + groups[k].total, 0);
+  const denominator = totalNetWorth > 0 ? totalNetWorth : grandTotal || 1;
 
-  // ── Wallet rows (one per active statement) ────────────────────────────
-  const rows = active.map((stmt) => {
-    const nwc = safeNumber(stmt.net_worth_contribution);
-    const pctOfTotal =
-      totalNetWorth > 0 ? Math.round((nwc / totalNetWorth) * 100) : 0;
-
-    return {
-      asset: stmt.file_name ?? stmt.platform ?? "Unknown",
-      platform: stmt.platform ?? stmt.source_type ?? "—",
-      value: formatCurrencySGD(nwc),
-      portfolio: `${pctOfTotal}%`,
-      riskLabel: deriveRiskLabel(stmt),
-      regulated: deriveRegulatedLabel(stmt),
-    };
-  });
-
-  // Add a summary row for email transactions if any exist
-  if (validEmailTx.length > 0 && emailNetCash !== 0) {
-    const pct =
-      totalNetWorth > 0
-        ? Math.round((Math.abs(emailNetCash) / totalNetWorth) * 100)
+  // ── Allocation (pie chart) ────────────────────────────────────────────
+  const allocation = ASSET_CLASSES
+    .map((key) => {
+      const meta = ASSET_CLASS_META[key];
+      const pct = denominator > 0
+        ? Math.round((groups[key].total / denominator) * 100)
         : 0;
-    rows.push({
-      asset: `Email Transactions (${validEmailTx.length})`,
-      platform: "Gmail",
-      value: formatCurrencySGD(emailNetCash),
-      portfolio: `${pct}%`,
-      riskLabel: "Core",
-      regulated: "✅ MAS",
+      return { name: meta.name, value: pct, color: meta.color };
+    })
+    .filter((a) => a.value > 0);
+
+  // ── Wallet rows (one per asset class that has data) ───────────────────
+  const rows = ASSET_CLASSES
+    .filter((key) => groups[key].total > 0)
+    .map((key) => {
+      const meta = ASSET_CLASS_META[key];
+      const g = groups[key];
+      const pct = denominator > 0
+        ? ((g.total / denominator) * 100).toFixed(1)
+        : "0.0";
+      // Top platform by count
+      const topPlatform = Object.entries(g.platforms)
+        .sort((a, b) => b[1] - a[1])
+        .map(([p]) => p)
+        .slice(0, 2)
+        .join(", ") || "—";
+
+      return {
+        asset: meta.name,
+        platform: topPlatform,
+        value: formatCurrencySGD(g.total),
+        portfolio: `${pct}%`,
+        riskLabel: RISK[key],
+        regulated: REG[key],
+      };
     });
-  }
 
   // ── Empty state ───────────────────────────────────────────────────────
   const emptyState = {
@@ -292,7 +331,7 @@ export function buildBudgetViewModel({ profile, statements, wellness } = {}) {
 
   // Current emergency savings = total liquidity (cash-like balances)
   const totals = sumAssetBreakdown(statements);
-  const cashLike = totals.cash + totals.bonds; // conservative: cash + bonds
+  const cashLike = totals.cash; // conservative liquid assets
   const emergencySavingsCurrent = safeNumber(wellness?.key_metrics?.net_worth)
     ? Math.min(
         cashLike || safeNumber(wellness?.key_metrics?.net_worth) * 0.3,
@@ -589,7 +628,7 @@ export function buildTransactionsViewModel({
         counterparty: tx.counterparty ?? "—",
         date: tx.date ?? "—",
         time: tx.time ?? "—",
-        category: tx.category ?? "uncategorised",
+        category: normalizeCategory(tx.category),
         direction: dir === "credit" || dir === "in" ? "credit" : "debit",
         amount: signedAmt,
         posted: tx.posted ?? formatRelativeDate(tx.date),
@@ -616,7 +655,7 @@ export function buildTransactionsViewModel({
       counterparty: tx.source ?? "—",
       date: tx.date ?? "—",
       time: tx.time ?? "—",
-      category: tx.category ?? "uncategorised",
+      category: normalizeCategory(tx.category),
       direction: amt >= 0 ? "credit" : "debit",
       amount: amt,
       posted: formatRelativeDate(tx.date),

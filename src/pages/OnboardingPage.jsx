@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { useFirestore } from '../hooks/useFirestore'
+import { recomputeAll } from '../services/financialDataService'
 
 const STEPS = [
   { title: 'Welcome', subtitle: "Let's get to know you" },
@@ -41,6 +42,7 @@ export default function OnboardingPage() {
         risk_profile:       'moderate',
         onboarding_complete: true,
       })
+      await recomputeAll(user.uid)
       await refreshProfile()
       navigate('/dashboard', { replace: true })
     } catch (err) {
