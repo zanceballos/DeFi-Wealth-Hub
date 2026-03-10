@@ -30,6 +30,16 @@ function Navbar() {
         navigate('/login')
     }
 
+    async function handleSettings() {
+        setIsMenuOpen(false)
+        navigate('/settings')
+    }
+
+    async function handleHelpCenter() {
+        setIsMenuOpen(false)
+        navigate('/help')
+    }
+
     function closeMobileNav() {
         setIsMobileNavOpen(false)
     }
@@ -154,6 +164,7 @@ function Navbar() {
                                 className="absolute right-0 top-11 z-50 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:top-12 sm:w-44"
                             >
                                 <button
+                                onClick={handleSettings}
                                     type="button"
                                     role="menuitem"
                                     className="w-full rounded-lg px-3 py-2 text-left text-slate-700 transition hover:bg-slate-100"
@@ -161,6 +172,7 @@ function Navbar() {
                                     Settings
                                 </button>
                                 <button
+                                    onClick={handleHelpCenter}
                                     type="button"
                                     role="menuitem"
                                     className="w-full rounded-lg px-3 py-2 text-left text-slate-700 transition hover:bg-slate-100"
