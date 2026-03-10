@@ -136,20 +136,21 @@ export default function BudgetingTab({
           category: updates.category,
           amount: updates.amount,
         });
-        triggerRecompute();
+        // emailTx.edit already calls recomputeAll internally
       }
     },
-    [user?.uid, emailTx, triggerRecompute]
+    [user?.uid, emailTx]
   );
 
   const handleCategoryChange = useCallback(
     (tx, newCategory) => {
       if (!user?.uid) return;
       if (tx.source === "email" && tx.id) {
-        emailTx.edit(tx.id, { category: newCategory }).then(() => triggerRecompute());
+        emailTx.edit(tx.id, { category: newCategory });
+        // emailTx.edit already calls recomputeAll internally
       }
     },
-    [user?.uid, emailTx, triggerRecompute]
+    [user?.uid, emailTx]
   );
 
   const handleExclude = useCallback(
@@ -160,7 +161,7 @@ export default function BudgetingTab({
       updateExcludedFingerprints?.(next);
       try {
         await updateDoc(doc(db, 'users', user.uid), { excluded_tx_fingerprints: next });
-        triggerRecompute();
+        triggerRecompute().catch((err) => console.error('[BudgetingTab] exclude recompute failed:', err));
       } catch (err) {
         console.error('Failed to persist excluded fingerprint:', err);
       }
@@ -176,7 +177,7 @@ export default function BudgetingTab({
       updateExcludedFingerprints?.(next);
       try {
         await updateDoc(doc(db, 'users', user.uid), { excluded_tx_fingerprints: next });
-        triggerRecompute();
+        triggerRecompute().catch((err) => console.error('[BudgetingTab] restore recompute failed:', err));
       } catch (err) {
         console.error('Failed to persist restored fingerprint:', err);
       }

@@ -83,27 +83,39 @@ export default function useEmailTransactions({ enabled = true } = {}) {
   // ── Actions ───────────────────────────────────────────────────────────
   const approve = useCallback(
     async (txId) => {
-      await approveTransaction(uid, txId)
-      await recomputeAll(uid)
-      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      try {
+        await approveTransaction(uid, txId)
+        await recomputeAll(uid)
+        try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      } catch (err) {
+        console.error('[useEmailTransactions] approve failed:', err)
+      }
     },
     [uid],
   )
 
   const reject = useCallback(
     async (txId) => {
-      await rejectTransaction(uid, txId)
-      await recomputeAll(uid)
-      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      try {
+        await rejectTransaction(uid, txId)
+        await recomputeAll(uid)
+        try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      } catch (err) {
+        console.error('[useEmailTransactions] reject failed:', err)
+      }
     },
     [uid],
   )
 
   const edit = useCallback(
     async (txId, updates) => {
-      await editTransaction(uid, txId, updates)
-      await recomputeAll(uid)
-      try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      try {
+        await editTransaction(uid, txId, updates)
+        await recomputeAll(uid)
+        try { sessionStorage.removeItem('dwh_advisory'); sessionStorage.removeItem('dwh_advisory_payload') } catch {}
+      } catch (err) {
+        console.error('[useEmailTransactions] edit failed:', err)
+      }
     },
     [uid],
   )

@@ -65,7 +65,7 @@ export default function BankAccountCard({ account, index, onUpdated }) {
     const result = await save()
     if (result) {
       setOptimistic(result)
-      recalculateNetWorth(uid).catch(() => {})
+      recalculateNetWorth(uid).catch((err) => console.error('[BankAccountCard] recompute failed:', err))
       if (onUpdated) onUpdated()
     }
   }

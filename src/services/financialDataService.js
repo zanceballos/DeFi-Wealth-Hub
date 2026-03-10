@@ -46,18 +46,21 @@ export function safePercent(part, total) {
  * @returns {'red'|'amber'|'green'}
  */
 export function deriveStatus(score) {
-  if (score < 40) return 'red'
-  if (score < 70) return 'amber'
-  return 'green'
+  if (score >= 70) return 'green'
+  if (score >= 50) return 'amber'
+  return 'red'
 }
 
 /**
  * Clamp a value between 0 and 100 (inclusive) and round to nearest integer.
+ * Returns 0 for NaN, Infinity, or undefined input.
  * @param {number} value
  * @returns {number}
  */
 export function clampScore(value) {
-  return Math.round(Math.min(100, Math.max(0, value ?? 0)))
+  const n = value ?? 0
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.min(100, Math.max(0, n)))
 }
 
 /**
@@ -350,9 +353,11 @@ export async function recomputeWellness(uid, _options = {}) {
   )
 
   // Diversification: penalise if largest position > 50% or < 3 sources
-  const diversificationScore = clampScore(
-    100 - largestPositionPct + Math.min(totalSourceCount * 10, 30),
-  )
+  // Default to 50 (neutral) when there are no active sources at all
+  const diversificationScore =
+    totalSourceCount === 0
+      ? 50
+      : clampScore(100 - largestPositionPct + Math.min(totalSourceCount * 10, 30))
 
   // Risk match: lower crypto & unregulated exposure → higher score
   const riskMatchScore = clampScore(100 - cryptoPct * 0.5 - unregulatedPct * 0.5)
@@ -362,11 +367,13 @@ export async function recomputeWellness(uid, _options = {}) {
     digitalPct <= 30 ? 70 + digitalPct : 100 - (digitalPct - 30) * 2,
   )
 
-  const overallScore = clampScore(
-    Math.round(
-      (liquidityScore + diversificationScore + riskMatchScore + digitalHealthScore) / 4,
-    ),
-  )
+  // Filter out any NaN/Infinity pillar before averaging
+  const pillarValues = [liquidityScore, diversificationScore, riskMatchScore, digitalHealthScore]
+  const validPillars = pillarValues.filter((s) => Number.isFinite(s))
+  const overallScore =
+    validPillars.length > 0
+      ? clampScore(validPillars.reduce((a, b) => a + b, 0) / validPillars.length)
+      : 0
   const status = deriveStatus(overallScore)
 
   const pillars = {
@@ -463,15 +470,30 @@ export async function upsertNetWorthHistory(uid, date, netWorthValue) {
  * @param {string} uid
  * @returns {Promise<{wellness: object, historyEntry: object}>}
  */
+let _recomputeInFlight = false
 export async function recomputeAll(uid) {
   if (!uid) return { wellness: null, historyEntry: null }
-  const wellness = await recomputeWellness(uid)
-  const historyEntry = await upsertNetWorthHistory(
-    uid,
-    new Date(),
-    wellness?.key_metrics?.net_worth ?? 0,
-  )
-  return { wellness, historyEntry }
+  if (_recomputeInFlight) {
+    console.debug('[recomputeAll] skipped — already in flight')
+    return { wellness: null, historyEntry: null }
+  }
+  _recomputeInFlight = true
+  try {
+    const wellness = await recomputeWellness(uid)
+    const netWorth = wellness?.key_metrics?.net_worth ?? 0
+    const historyEntry = await upsertNetWorthHistory(uid, new Date(), netWorth)
+
+    const p = wellness?.pillars ?? {}
+    console.log(
+      `[recomputeAll] uid=${uid} netWorth=${netWorth} overall=${wellness?.overall_score}` +
+      ` pillars={ liq=${p.liquidity?.score} div=${p.diversification?.score}` +
+      ` risk=${p.risk_match?.score} dig=${p.digital_health?.score} }`,
+    )
+
+    return { wellness, historyEntry }
+  } finally {
+    _recomputeInFlight = false
+  }
 }
 
 /** @deprecated Use recomputeAll instead */

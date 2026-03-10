@@ -46,7 +46,7 @@ export default function CryptoHoldingCard({ holding, index, livePrice, onUpdated
     const result = await save()
     if (result) {
       setOptimistic(result)
-      recalculateNetWorth(uid).catch(() => {})
+      recalculateNetWorth(uid).catch((err) => console.error('[CryptoHoldingCard] recompute failed:', err))
       if (onUpdated) onUpdated()
     }
   }

@@ -94,25 +94,25 @@ function pillarDescription(key, score) {
     liquidity:
       score >= 70
         ? "Cash reserves comfortably cover short-term needs."
-        : score >= 40
+        : score >= 50
           ? "Cash buffer is building but below the ideal range."
           : "Cash reserves are below target for short-term resilience.",
     diversification:
       score >= 70
         ? "Portfolio is well diversified across asset classes."
-        : score >= 40
+        : score >= 50
           ? "Allocation is balanced but still concentrated in key sectors."
           : "Portfolio is heavily concentrated — consider diversifying.",
     risk_match:
       score >= 70
         ? "Portfolio risk is well aligned with your profile."
-        : score >= 40
+        : score >= 50
           ? "Current volatility is slightly above your profile."
           : "Risk exposure significantly exceeds your comfort zone.",
     digital_health:
       score >= 70
         ? "Digital asset exposure is healthy and well-managed."
-        : score >= 40
+        : score >= 50
           ? "Exposure is meaningful and should be actively monitored."
           : "Digital asset allocation needs attention.",
   };
@@ -122,7 +122,7 @@ function pillarDescription(key, score) {
 function scoreToColor(score) {
   if (score >= 70)
     return { colorClass: "bg-emerald-500", textClass: "text-emerald-500" };
-  if (score >= 40)
+  if (score >= 50)
     return { colorClass: "bg-amber-400", textClass: "text-amber-500" };
   return { colorClass: "bg-red-500", textClass: "text-red-500" };
 }
@@ -131,8 +131,7 @@ function wellnessLabel(score) {
   if (score >= 80) return "Excellent Health";
   if (score >= 70) return "Good Health";
   if (score >= 50) return "Moderate Health";
-  if (score >= 40) return "Needs Attention";
-  return "Critical";
+  return "Needs Attention";
 }
 
 function fmtCurrency(value, currency = "S$") {
@@ -412,6 +411,13 @@ export default function useDashboardData() {
         historyItems.length > 0 ||
         hasEmailTx;
       setIsEmpty(!hasData);
+
+      // ── Bootstrap: if user has data but no history/wellness, run initial recompute ──
+      if (hasData && (historyItems.length === 0 || !wellness)) {
+        recomputeAll(uid).catch((err) =>
+          console.error("[useDashboardData] bootstrap recompute failed:", err),
+        );
+      }
 
       // ════════════════════════════════════════════════════════════════════
       // OVERVIEW TAB transformations + Wallet/Budget rebuild

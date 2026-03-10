@@ -1119,7 +1119,7 @@ service firebase.storage {
                 <CodeBlock>{"overallScore = round((liquidity + diversification + riskMatch + digitalHealth) / 4)"}</CodeBlock>
                 <table className="mt-3 w-full text-xs">
                   <tbody className={`divide-y ${dk ? "divide-white/5" : "divide-gray-100"}`}>
-                    {[["80–100","🟢 Excellent Health"],["70–79","🟢 Good Health"],["50–69","🟡 Moderate Health"],["40–49","🟡 Needs Attention"],["0–39","🔴 Critical"]].map(([range, label]) => (
+                    {[["80–100","🟢 Excellent Health"],["70–79","🟢 Good Health"],["50–69","🟡 Moderate Health"],["0–49","🔴 Needs Attention"]].map(([range, label]) => (
                       <tr key={range}>
                         <td className="py-1.5 pr-4 font-mono text-teal-500">{range}</td>
                         <td className={`py-1.5 ${dk ? "text-slate-300" : "text-gray-700"}`}>{label}</td>

@@ -2,10 +2,13 @@ import { useState } from 'react'
 import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield, Pencil, Plus, Trash2, X} from 'lucide-react'
 import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
 import {
+    CartesianGrid,
     Line,
     LineChart,
     ResponsiveContainer,
     Tooltip,
+    XAxis,
+    YAxis,
 } from 'recharts'
 import MetricCard, {BreakdownRow, PillarRow} from '../../../components/ui/MetricCard.jsx'
 import {EmptyState} from "./EmptyState.jsx";
@@ -21,6 +24,12 @@ const CARD_CLASS =
     'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-4 sm:p-5'
 
 
+const fmtAxis = (v) => {
+    if (v >= 1_000_000) return `S$${(v / 1_000_000).toFixed(1)}M`
+    if (v >= 1_000) return `S$${(v / 1_000).toFixed(0)}k`
+    return `S$${v}`
+}
+
 function CurrencyTooltip({active, payload, label}) {
     if (!active || !payload?.length) {
         return null
@@ -31,7 +40,7 @@ function CurrencyTooltip({active, payload, label}) {
     return (
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg">
             <p className="text-xs font-medium text-slate-500">{label}</p>
-            <p className="text-sm font-semibold text-brand-primary">S${point.value.toLocaleString()}</p>
+            <p className="text-sm font-semibold text-brand-primary">S${Number(point.value).toLocaleString()}</p>
         </div>
     )
 }
@@ -172,7 +181,7 @@ function OverviewTab({
     const wellnessStatusColor =
         heroStats.wellness.score >= 70
             ? 'bg-emerald-100 text-emerald-700'
-            : heroStats.wellness.score >= 40
+            : heroStats.wellness.score >= 50
                 ? 'bg-amber-100 text-amber-700'
                 : 'bg-red-100 text-red-700'
 
@@ -444,15 +453,46 @@ function OverviewTab({
             <article className={`${CARD_CLASS}`}>
                 <div className="mb-5 flex items-center justify-between">
                     <h2 className="text-base font-semibold text-slate-900">Net Worth Trend</h2>
-                    <span className="text-sm text-slate-400">Jan — Dec</span>
+                    {netWorthSeries.length > 0 && (
+                        <span className="text-sm text-slate-400">
+                            {netWorthSeries[0]?.month} — {netWorthSeries[netWorthSeries.length - 1]?.month}
+                        </span>
+                    )}
                 </div>
                 <div className="h-72 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={netWorthSeries} margin={{top: 10, right: 12, left: 6, bottom: 0}}>
-                            <Tooltip content={<CurrencyTooltip/>} cursor={{stroke: '#78D5D7', strokeWidth: 1.5}}/>
-                            <Line type="monotone" dataKey="value" stroke="#2081C3" strokeWidth={3} dot={false}/>
-                        </LineChart>
-                    </ResponsiveContainer>
+                    {netWorthSeries.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                            No trend data yet — your chart will appear as net worth updates each month.
+                        </div>
+                    ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={netWorthSeries} margin={{top: 10, right: 12, left: 6, bottom: 0}}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                                <XAxis
+                                    dataKey="month"
+                                    tick={{fontSize: 11, fill: '#94A3B8'}}
+                                    axisLine={false}
+                                    tickLine={false}
+                                />
+                                <YAxis
+                                    tickFormatter={fmtAxis}
+                                    tick={{fontSize: 11, fill: '#94A3B8'}}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    width={54}
+                                />
+                                <Tooltip content={<CurrencyTooltip/>} cursor={{stroke: '#78D5D7', strokeWidth: 1.5}}/>
+                                <Line
+                                    type="monotone"
+                                    dataKey="value"
+                                    stroke="#2081C3"
+                                    strokeWidth={3}
+                                    dot={netWorthSeries.length <= 3}
+                                    activeDot={{r: 5, fill: '#2081C3', stroke: '#fff', strokeWidth: 2}}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    )}
                 </div>
             </article>
 
