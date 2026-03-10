@@ -15,6 +15,8 @@ import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import {AppProvider} from "./context/AppContext.jsx";
 import Privacy from "./pages/Privacy.jsx";
+import HelpCentre from "./pages/HelpCentre.jsx";
+import SettingsPage from "./pages/Settings.jsx";
 
 createRoot(document.getElementById('root')).render(
     <StrictMode>
@@ -34,6 +36,8 @@ createRoot(document.getElementById('root')).render(
                                 <Route path="dashboard" element={<Dashboard/>}/>
                                 <Route path="advisory" element={<AdvisoryPage/>}/>
                                 <Route path="privacy" element={<Privacy/>}/>
+                                <Route path="help" element={<HelpCentre/>}/>
+                                <Route path="settings" element={<SettingsPage/>}/>
                                 {/*<Route path="home" element={<Home/>}/>*/}
                                 {/*<Route path="portfolio" element={<Portfolio/>}/>*/}
                                 {/*<Route path="transactions" element={<Transactions/>}/>*/}
