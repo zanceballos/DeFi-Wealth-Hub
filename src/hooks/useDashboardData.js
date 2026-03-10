@@ -359,10 +359,10 @@ export default function useDashboardData() {
       const historyItems = [];
       historySnap.forEach((d) => historyItems.push(d.data()));
 
-      // 5. Email transactions (Source C) — collection renamed from emailTransactions → Transactions
+      // 5. Email transactions (Source C)
       let emailTxItems = [];
       try {
-        const emailTxCol = collection(db, "users", uid, "Transactions");
+        const emailTxCol = collection(db, "users", uid, "emailTransactions");
         const emailTxSnap = await getDocs(
           query(emailTxCol, orderBy("createdAt", "desc"), limit(500)),
         );
@@ -567,10 +567,10 @@ export default function useDashboardData() {
     fetchData();
   }, [fetchData]);
 
-  // ── Real-time listener for Transactions (so Gmail sync updates UI) ──
+  // ── Real-time listener for emailTransactions (so Gmail sync updates UI) ──
   useEffect(() => {
     if (!uid) return;
-    const emailTxCol = collection(db, "users", uid, "Transactions");
+    const emailTxCol = collection(db, "users", uid, "emailTransactions");
     const q = query(emailTxCol, orderBy("createdAt", "desc"), limit(500));
     const unsub = onSnapshot(q, (snap) => {
       const items = [];
