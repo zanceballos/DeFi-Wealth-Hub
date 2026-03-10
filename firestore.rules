@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can read and write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Unified transactions collection (email + statement imports)
+      match /Transactions/{txId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Legacy collection name — keep for backwards compatibility during migration
+      match /emailTransactions/{txId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Any other sub-collections under a user's document
+      match /{subcollection}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

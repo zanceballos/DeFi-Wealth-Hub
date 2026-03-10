@@ -20,8 +20,8 @@
  *   }
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { db } from '../lib/firebase.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { db } from "../lib/firebase.js";
 import {
   collection,
   doc,
@@ -31,25 +31,30 @@ import {
   query,
   limit,
   onSnapshot,
-} from 'firebase/firestore'
-import { useAuthContext } from './useAuthContext.js'
-import { CandlestickChart, Droplets, ShieldAlert, Sparkles } from 'lucide-react'
+} from "firebase/firestore";
+import { useAuthContext } from "./useAuthContext.js";
+import {
+  CandlestickChart,
+  Droplets,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 
 import {
   buildWalletViewModel,
   buildBudgetViewModel,
   buildTransactionsViewModel,
   safeNumber,
-} from '../services/dashboardViewModel.js'
-import { getYfPrice } from '../services/marketDataService.js'
+} from "../services/dashboardViewModel.js";
+import { getYfPrice } from "../services/marketDataService.js";
 
 // ── Empty defaults (no mock data — real values come from Firestore) ──
 const EMPTY_HERO = {
-  netWorth: { value: 'S$0', delta: '' },
-  wellness: { score: 0, label: '' },
-  savings:  { value: 'S$0', rate: 0 },
-}
-const EMPTY_USER_PROFILE = { name: '', riskProfile: '', location: '' }
+  netWorth: { value: "S$0", delta: "" },
+  wellness: { score: 0, label: "" },
+  savings: { value: "S$0", rate: 0 },
+};
+const EMPTY_USER_PROFILE = { name: "", riskProfile: "", location: "" };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Overview-specific helpers (kept here because they reference lucide icons
@@ -57,372 +62,472 @@ const EMPTY_USER_PROFILE = { name: '', riskProfile: '', location: '' }
 // ═══════════════════════════════════════════════════════════════════════════
 
 const PILLAR_META = {
-  liquidity:       {
+  liquidity: {
     icon: Droplets,
-    label: 'Liquidity',
-    calculationTooltip: 'Score = (Cash buffer months ÷ 6) × 100, capped at 100. A 6-month cash buffer earns a perfect score.',
+    label: "Liquidity",
+    calculationTooltip:
+      "Score = (Cash buffer months ÷ 6) × 100, capped at 100. A 6-month cash buffer earns a perfect score.",
   },
   diversification: {
     icon: CandlestickChart,
-    label: 'Diversification',
-    calculationTooltip: 'Score = 100 − largest position % + min(number of accounts × 10, 30). Penalises heavy concentration in a single asset.',
+    label: "Diversification",
+    calculationTooltip:
+      "Score = 100 − largest position % + min(number of accounts × 10, 30). Penalises heavy concentration in a single asset.",
   },
-  risk_match:      {
+  risk_match: {
     icon: ShieldAlert,
-    label: 'Risk Match',
-    calculationTooltip: 'Score = 100 − (crypto % × 0.5) − (unregulated % × 0.5). Lower crypto and unregulated exposure means better alignment with your risk profile.',
+    label: "Risk Match",
+    calculationTooltip:
+      "Score = 100 − (crypto % × 0.5) − (unregulated % × 0.5). Lower crypto and unregulated exposure means better alignment with your risk profile.",
   },
-  digital_health:  {
+  digital_health: {
     icon: Sparkles,
-    label: 'Digital Assets',
-    calculationTooltip: 'If digital exposure ≤ 30%: Score = 70 + digital %. Above 30%: Score = 100 − (digital % − 30) × 2. Ideal range is 5–30%.',
+    label: "Digital Assets",
+    calculationTooltip:
+      "If digital exposure ≤ 30%: Score = 70 + digital %. Above 30%: Score = 100 − (digital % − 30) × 2. Ideal range is 5–30%.",
   },
-}
+};
 
 function pillarDescription(key, score) {
   const descriptions = {
     liquidity:
-      score >= 70 ? 'Cash reserves comfortably cover short-term needs.'
-        : score >= 40 ? 'Cash buffer is building but below the ideal range.'
-          : 'Cash reserves are below target for short-term resilience.',
+      score >= 70
+        ? "Cash reserves comfortably cover short-term needs."
+        : score >= 40
+          ? "Cash buffer is building but below the ideal range."
+          : "Cash reserves are below target for short-term resilience.",
     diversification:
-      score >= 70 ? 'Portfolio is well diversified across asset classes.'
-        : score >= 40 ? 'Allocation is balanced but still concentrated in key sectors.'
-          : 'Portfolio is heavily concentrated — consider diversifying.',
+      score >= 70
+        ? "Portfolio is well diversified across asset classes."
+        : score >= 40
+          ? "Allocation is balanced but still concentrated in key sectors."
+          : "Portfolio is heavily concentrated — consider diversifying.",
     risk_match:
-      score >= 70 ? 'Portfolio risk is well aligned with your profile.'
-        : score >= 40 ? 'Current volatility is slightly above your profile.'
-          : 'Risk exposure significantly exceeds your comfort zone.',
+      score >= 70
+        ? "Portfolio risk is well aligned with your profile."
+        : score >= 40
+          ? "Current volatility is slightly above your profile."
+          : "Risk exposure significantly exceeds your comfort zone.",
     digital_health:
-      score >= 70 ? 'Digital asset exposure is healthy and well-managed.'
-        : score >= 40 ? 'Exposure is meaningful and should be actively monitored.'
-          : 'Digital asset allocation needs attention.',
-  }
-  return descriptions[key] ?? ''
+      score >= 70
+        ? "Digital asset exposure is healthy and well-managed."
+        : score >= 40
+          ? "Exposure is meaningful and should be actively monitored."
+          : "Digital asset allocation needs attention.",
+  };
+  return descriptions[key] ?? "";
 }
 
 function scoreToColor(score) {
-  if (score >= 70) return { colorClass: 'bg-emerald-500', textClass: 'text-emerald-500' }
-  if (score >= 40) return { colorClass: 'bg-amber-400',   textClass: 'text-amber-500' }
-  return { colorClass: 'bg-red-500', textClass: 'text-red-500' }
+  if (score >= 70)
+    return { colorClass: "bg-emerald-500", textClass: "text-emerald-500" };
+  if (score >= 40)
+    return { colorClass: "bg-amber-400", textClass: "text-amber-500" };
+  return { colorClass: "bg-red-500", textClass: "text-red-500" };
 }
 
 function wellnessLabel(score) {
-  if (score >= 80) return 'Excellent Health'
-  if (score >= 70) return 'Good Health'
-  if (score >= 50) return 'Moderate Health'
-  if (score >= 40) return 'Needs Attention'
-  return 'Critical'
+  if (score >= 80) return "Excellent Health";
+  if (score >= 70) return "Good Health";
+  if (score >= 50) return "Moderate Health";
+  if (score >= 40) return "Needs Attention";
+  return "Critical";
 }
 
-function fmtCurrency(value, currency = 'S$') {
-  if (value == null) return `${currency}0`
-  return `${currency}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+function fmtCurrency(value, currency = "S$") {
+  if (value == null) return `${currency}0`;
+  return `${currency}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 const BREAKDOWN_COLORS = {
-  cash:       'bg-emerald-400',
-  stocks:     'bg-blue-500',
-  crypto:     'bg-amber-400',
-  property:   'bg-rose-400',
-  tokenised:  'bg-violet-400',
-  bonds:      'bg-sky-400',
-}
+  cash: "bg-emerald-400",
+  stocks: "bg-blue-500",
+  crypto: "bg-amber-400",
+  property: "bg-rose-400",
+  tokenised: "bg-violet-400",
+  bonds: "bg-sky-400",
+};
 
 const BREAKDOWN_LABELS = {
-  cash:       'Cash & savings',
-  stocks:     'Stocks & ETFs',
-  crypto:     'Crypto',
-  property:   'Property',
-  tokenised:  'Tokenised assets',
-  bonds:      'Bonds',
-}
-
-
+  cash: "Cash & savings",
+  stocks: "Stocks & ETFs",
+  crypto: "Crypto",
+  property: "Property",
+  tokenised: "Tokenised assets",
+  bonds: "Bonds",
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hook
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function useDashboardData() {
-  const { user } = useAuthContext()
-  const uid = user?.uid ?? ''
+  const { user } = useAuthContext();
+  const uid = user?.uid ?? "";
 
   // ── State ─────────────────────────────────────────────────────────────
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [isEmpty, setIsEmpty]       = useState(false)
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isEmpty, setIsEmpty] = useState(false);
 
   // Overview tab
-  const [userProfile, setUserProfile]             = useState(EMPTY_USER_PROFILE)
-  const [heroStats, setHeroStats]                 = useState(EMPTY_HERO)
-  const [pillarScores, setPillarScores]           = useState([])
-  const [netWorthSeries, setNetWorthSeries]       = useState([])
-  const [savingsDetail, setSavingsDetail]         = useState({ income: 'S$0', expenses: 'S$0', net: 'S$0', target: 20 })
-  const [netWorthBreakdown, setNetWorthBreakdown] = useState([])
+  const [userProfile, setUserProfile] = useState(EMPTY_USER_PROFILE);
+  const [heroStats, setHeroStats] = useState(EMPTY_HERO);
+  const [pillarScores, setPillarScores] = useState([]);
+  const [netWorthSeries, setNetWorthSeries] = useState([]);
+  const [savingsDetail, setSavingsDetail] = useState({
+    income: "S$0",
+    expenses: "S$0",
+    net: "S$0",
+    target: 20,
+  });
+  const [netWorthBreakdown, setNetWorthBreakdown] = useState([]);
 
   // Wallet + Budget + Transactions tabs
-  const [walletViewModel, setWalletViewModel] = useState(() => buildWalletViewModel())
-  const [budgetViewModel, setBudgetViewModel] = useState(() => buildBudgetViewModel())
-  const [transactionsViewModel, setTransactionsViewModel] = useState(() => buildTransactionsViewModel())
-  const [emailTransactions, setEmailTransactions] = useState([])
+  const [walletViewModel, setWalletViewModel] = useState(() =>
+    buildWalletViewModel(),
+  );
+  const [budgetViewModel, setBudgetViewModel] = useState(() =>
+    buildBudgetViewModel(),
+  );
+  const [transactionsViewModel, setTransactionsViewModel] = useState(() =>
+    buildTransactionsViewModel(),
+  );
+  const [emailTransactions, setEmailTransactions] = useState([]);
 
   // Raw data
-  const [raw, setRaw] = useState({ profile: null, statements: [], wellness: null, netWorthHistory: [], emailTransactions: [] })
+  const [raw, setRaw] = useState({
+    profile: null,
+    statements: [],
+    wellness: null,
+    netWorthHistory: [],
+    emailTransactions: [],
+  });
 
   // Keep refs so the onSnapshot callbacks always have the latest data
-  const statementsRef = useRef([])
-  const profileRef = useRef(null)
-  const emailTxRef = useRef([])
-  const excludedFpRef = useRef([])
+  const statementsRef = useRef([]);
+  const profileRef = useRef(null);
+  const emailTxRef = useRef([]);
+  const excludedFpRef = useRef([]);
 
   // ── Helper: apply wellness data to overview state ─────────────────────
-  const applyWellness = useCallback((wellness, profile, statements, emailTx) => {
-    if (!wellness) return
-    const km           = wellness.key_metrics ?? {}
-    const netWorth     = safeNumber(km.net_worth)
-    const savingsRate  = safeNumber(km.savings_rate_pct)
-    const monthlyIncome = safeNumber(profile?.monthly_income)
-    const monthlyExp    = safeNumber(profile?.monthly_expenses)
-    const netSavings    = monthlyIncome - monthlyExp
+  const applyWellness = useCallback(
+    (wellness, profile, statements, emailTx) => {
+      if (!wellness) return;
+      const km = wellness.key_metrics ?? {};
+      const netWorth = safeNumber(km.net_worth);
+      const savingsRate = safeNumber(km.savings_rate_pct);
+      const monthlyIncome = safeNumber(profile?.monthly_income);
+      const monthlyExp = safeNumber(profile?.monthly_expenses);
+      const netSavings = monthlyIncome - monthlyExp;
 
-    setHeroStats({
-      netWorth: {
-        value: fmtCurrency(netWorth),
-        delta: wellness.status === 'green' ? 'Healthy'
-          : wellness.status === 'amber' ? 'Moderate'
-            : 'Needs attention',
-      },
-      wellness: {
-        score: wellness.overall_score ?? 0,
-        label: wellnessLabel(wellness.overall_score ?? 0),
-      },
-      savings: {
-        value: fmtCurrency(Math.max(netSavings, 0)),
-        rate: Math.round(savingsRate),
-      },
-    })
+      setHeroStats({
+        netWorth: {
+          value: fmtCurrency(netWorth),
+          delta:
+            wellness.status === "green"
+              ? "Healthy"
+              : wellness.status === "amber"
+                ? "Moderate"
+                : "Needs attention",
+        },
+        wellness: {
+          score: wellness.overall_score ?? 0,
+          label: wellnessLabel(wellness.overall_score ?? 0),
+        },
+        savings: {
+          value: fmtCurrency(Math.max(netSavings, 0)),
+          rate: Math.round(savingsRate),
+        },
+      });
 
-    setSavingsDetail({
-      income:   fmtCurrency(monthlyIncome),
-      expenses: fmtCurrency(monthlyExp),
-      net:      fmtCurrency(netSavings),
-      target:   20,
-    })
+      setSavingsDetail({
+        income: fmtCurrency(monthlyIncome),
+        expenses: fmtCurrency(monthlyExp),
+        net: fmtCurrency(netSavings),
+        target: 20,
+      });
 
-    const pillars = wellness.pillars ?? {}
-    setPillarScores(
-      Object.entries(PILLAR_META).map(([key, meta]) => {
-        const p     = pillars[key] ?? {}
-        const score = p.score ?? 0
-        return {
-          name: meta.label,
-          score,
-          ...scoreToColor(score),
-          icon: meta.icon,
-          description: pillarDescription(key, score),
-          calculationTooltip: meta.calculationTooltip,
-        }
-      }),
-    )
+      const pillars = wellness.pillars ?? {};
+      setPillarScores(
+        Object.entries(PILLAR_META).map(([key, meta]) => {
+          const p = pillars[key] ?? {};
+          const score = p.score ?? 0;
+          return {
+            name: meta.label,
+            score,
+            ...scoreToColor(score),
+            icon: meta.icon,
+            description: pillarDescription(key, score),
+            calculationTooltip: meta.calculationTooltip,
+          };
+        }),
+      );
 
-    // Rebuild wallet + budget with fresh wellness + email transactions
-    setWalletViewModel(buildWalletViewModel({ statements, wellness, emailTransactions: emailTx }))
-    setBudgetViewModel(buildBudgetViewModel({ profile, statements, wellness }))
-  }, [])
+      // Rebuild wallet + budget with fresh wellness + email transactions
+      setWalletViewModel(
+        buildWalletViewModel({
+          statements,
+          wellness,
+          emailTransactions: emailTx,
+        }),
+      );
+      setBudgetViewModel(
+        buildBudgetViewModel({ profile, statements, wellness }),
+      );
+    },
+    [],
+  );
 
   // ── Fetch ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!uid) {
-      setIsEmpty(true)
-      setLoading(false)
-      return
+      setIsEmpty(true);
+      setLoading(false);
+      return;
     }
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
     try {
       // 1. User profile
-      const profileSnap = await getDoc(doc(db, 'users', uid))
-      const profile = profileSnap.exists() ? profileSnap.data() : null
+      const profileSnap = await getDoc(doc(db, "users", uid));
+      const profile = profileSnap.exists() ? profileSnap.data() : null;
 
       if (profile) {
         setUserProfile({
           uid,
-          name:        profile.name ?? profile.displayName ?? '',
-          riskProfile: profile.riskProfile ?? profile.risk_profile ?? '',
-          location:    profile.location ?? '',
-        })
+          name: profile.name ?? profile.displayName ?? "",
+          riskProfile: profile.riskProfile ?? profile.risk_profile ?? "",
+          location: profile.location ?? "",
+        });
       }
 
       // 2. Wellness snapshot
-      const wellnessSnap = await getDoc(doc(db, 'users', uid, 'wellness', 'current'))
-      const wellness = wellnessSnap.exists() ? wellnessSnap.data() : null
+      const wellnessSnap = await getDoc(
+        doc(db, "users", uid, "wellness", "current"),
+      );
+      const wellness = wellnessSnap.exists() ? wellnessSnap.data() : null;
 
       // 3. Statements + their transaction subcollections
-      const statementsSnap = await getDocs(collection(db, 'users', uid, 'statements'))
-      const statements = []
-      statementsSnap.forEach((d) => statements.push({ id: d.id, ...d.data() }))
+      const statementsSnap = await getDocs(
+        collection(db, "users", uid, "statements"),
+      );
+      const statements = [];
+      statementsSnap.forEach((d) => statements.push({ id: d.id, ...d.data() }));
       const activeStmts = statements.filter(
-        (s) => s.status === 'parsed' || s.status === 'approved',
-      )
+        (s) => s.status === "parsed" || s.status === "approved",
+      );
 
       // Fetch transactions subcollection for each active statement (needed for Budget)
       for (const stmt of activeStmts) {
         try {
-          const txCol = collection(db, 'users', uid, 'statements', stmt.id, 'transactions')
-          const txSnap = await getDocs(query(txCol, orderBy('date', 'desc'), limit(200)))
-          const txns = []
-          txSnap.forEach((td) => txns.push({ id: td.id, ...td.data() }))
-          stmt.transactions = txns
+          const txCol = collection(
+            db,
+            "users",
+            uid,
+            "statements",
+            stmt.id,
+            "transactions",
+          );
+          const txSnap = await getDocs(
+            query(txCol, orderBy("date", "desc"), limit(200)),
+          );
+          const txns = [];
+          txSnap.forEach((td) => txns.push({ id: td.id, ...td.data() }));
+          stmt.transactions = txns;
         } catch {
-          stmt.transactions = []
+          stmt.transactions = [];
         }
       }
 
       // 4. Net worth history
-      const historyRef = collection(db, 'users', uid, 'history', 'net_worth', 'items')
-      const historySnap = await getDocs(query(historyRef, orderBy('month_key', 'asc')))
-      const historyItems = []
-      historySnap.forEach((d) => historyItems.push(d.data()))
+      const historyRef = collection(
+        db,
+        "users",
+        uid,
+        "history",
+        "net_worth",
+        "items",
+      );
+      const historySnap = await getDocs(
+        query(historyRef, orderBy("month_key", "asc")),
+      );
+      const historyItems = [];
+      historySnap.forEach((d) => historyItems.push(d.data()));
 
-      // 5. Email transactions (Source C)
-      let emailTxItems = []
+      // 5. Email transactions (Source C) — collection renamed from emailTransactions → Transactions
+      let emailTxItems = [];
       try {
-        const emailTxCol = collection(db, 'users', uid, 'emailTransactions')
-        const emailTxSnap = await getDocs(query(emailTxCol, orderBy('createdAt', 'desc'), limit(500)))
-        emailTxSnap.forEach((d) => emailTxItems.push({ id: d.id, ...d.data() }))
-        emailTxItems = emailTxItems.filter((tx) => !tx.deleted)
+        const emailTxCol = collection(db, "users", uid, "Transactions");
+        const emailTxSnap = await getDocs(
+          query(emailTxCol, orderBy("createdAt", "desc"), limit(500)),
+        );
+        emailTxSnap.forEach((d) =>
+          emailTxItems.push({ id: d.id, ...d.data() }),
+        );
+        emailTxItems = emailTxItems.filter((tx) => !tx.deleted);
       } catch {
-        emailTxItems = []
+        emailTxItems = [];
       }
-      setEmailTransactions(emailTxItems)
+      setEmailTransactions(emailTxItems);
 
       // ── Save raw ──────────────────────────────────────────────────────
-      statementsRef.current = statements
-      profileRef.current = profile
-      emailTxRef.current = emailTxItems
-      const excludedFp = Array.isArray(profile?.excluded_tx_fingerprints) ? profile.excluded_tx_fingerprints : []
-      excludedFpRef.current = excludedFp
-      setRaw({ profile, statements, wellness, netWorthHistory: historyItems, emailTransactions: emailTxItems })
+      statementsRef.current = statements;
+      profileRef.current = profile;
+      emailTxRef.current = emailTxItems;
+      const excludedFp = Array.isArray(profile?.excluded_tx_fingerprints)
+        ? profile.excluded_tx_fingerprints
+        : [];
+      excludedFpRef.current = excludedFp;
+      setRaw({
+        profile,
+        statements,
+        wellness,
+        netWorthHistory: historyItems,
+        emailTransactions: emailTxItems,
+      });
 
       // ── Detect empty state ────────────────────────────────────────────
       // Also consider manual_accounts saved on the user document
-      const manual = profile?.manual_accounts
-      const hasManual = (
+      const manual = profile?.manual_accounts;
+      const hasManual =
         (Array.isArray(manual?.accounts) && manual.accounts.length > 0) ||
-        (Array.isArray(manual?.investments) && manual.investments.length > 0)
-      )
-      const hasEmailTx = emailTxItems.length > 0
-      const hasData = hasManual || !!wellness || activeStmts.length > 0 || historyItems.length > 0 || hasEmailTx
-      setIsEmpty(!hasData)
+        (Array.isArray(manual?.investments) && manual.investments.length > 0);
+      const hasEmailTx = emailTxItems.length > 0;
+      const hasData =
+        hasManual ||
+        !!wellness ||
+        activeStmts.length > 0 ||
+        historyItems.length > 0 ||
+        hasEmailTx;
+      setIsEmpty(!hasData);
 
       // ════════════════════════════════════════════════════════════════════
       // OVERVIEW TAB transformations + Wallet/Budget rebuild
       // ════════════════════════════════════════════════════════════════════
-      applyWellness(wellness, profile, statements, emailTxItems)
+      applyWellness(wellness, profile, statements, emailTxItems);
 
       // Asset breakdown (overview card)
       if (activeStmts.length > 0) {
-        const totals = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
-        let grandTotal = 0
+        const totals = {
+          cash: 0,
+          stocks: 0,
+          crypto: 0,
+          property: 0,
+          tokenised: 0,
+          bonds: 0,
+        };
+        let grandTotal = 0;
         for (const stmt of activeStmts) {
-          const bd = stmt.asset_class_breakdown ?? {}
+          const bd = stmt.asset_class_breakdown ?? {};
           for (const key of Object.keys(totals)) {
-            const v = safeNumber(bd[key])
-            totals[key] += v
-            grandTotal += v
+            const v = safeNumber(bd[key]);
+            totals[key] += v;
+            grandTotal += v;
           }
         }
         const breakdown = Object.entries(totals)
           .filter(([, v]) => v > 0)
           .map(([key, v]) => ({
-            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
-            label:   BREAKDOWN_LABELS[key] ?? key,
-            value:   fmtCurrency(v),
+            color: BREAKDOWN_COLORS[key] ?? "bg-slate-400",
+            label: BREAKDOWN_LABELS[key] ?? key,
+            value: fmtCurrency(v),
             percent: grandTotal > 0 ? Math.round((v / grandTotal) * 100) : 0,
-          }))
+          }));
         if (breakdown.length > 0) {
-          setNetWorthBreakdown(breakdown)
+          setNetWorthBreakdown(breakdown);
         }
       }
 
       // ── Manual data asset breakdown (cash from user manual_accounts) ──
       // Start: line 322 onwards as requested
-      const manualAccounts = profile?.manual_accounts?.accounts
-      const manualInvestments = profile?.manual_accounts?.investments
+      const manualAccounts = profile?.manual_accounts?.accounts;
+      const manualInvestments = profile?.manual_accounts?.investments;
 
       // Aggregate manual cash from accounts (if present)
       const manualCash = Array.isArray(manualAccounts)
         ? manualAccounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
-        : 0
+        : 0;
 
       // Aggregate manual investments into stocks and crypto buckets (sum of lots: quantity * averageCost)
-      let manualStocks = 0
-      let manualCrypto = 0
+      let manualStocks = 0;
+      let manualCrypto = 0;
       if (Array.isArray(manualInvestments) && manualInvestments.length > 0) {
         for (const inv of manualInvestments) {
-          const lots = Array.isArray(inv?.lots) ? inv.lots : []
+          const lots = Array.isArray(inv?.lots) ? inv.lots : [];
           const assetTotal = lots.reduce((sum, lot) => {
-            const qty = safeNumber(lot?.quantity)
-            const avg = safeNumber(lot?.averageCost)
-            const val = qty * avg
-            return sum + (Number.isFinite(val) ? val : 0)
-          }, 0)
+            const qty = safeNumber(lot?.quantity);
+            const avg = safeNumber(lot?.averageCost);
+            const val = qty * avg;
+            return sum + (Number.isFinite(val) ? val : 0);
+          }, 0);
 
           // normalise type to buckets
-          const t = (inv?.type || '').toLowerCase()
-          if (t === 'crypto') {
-            manualCrypto += assetTotal
-          } else if (t === 'stocks_etfs' || t === 'stocks_etf' || t === 'stock_etf' || t === 'stocks' ) {
-            manualStocks += assetTotal
+          const t = (inv?.type || "").toLowerCase();
+          if (t === "crypto") {
+            manualCrypto += assetTotal;
+          } else if (
+            t === "stocks_etfs" ||
+            t === "stocks_etf" ||
+            t === "stock_etf" ||
+            t === "stocks"
+          ) {
+            manualStocks += assetTotal;
           } else {
             // default unknown types to stocks bucket to avoid losing value
-            manualStocks += assetTotal
+            manualStocks += assetTotal;
           }
         }
       }
 
       // If we have any manual totals (cash/stocks/crypto), recalc totals including them and recompute percentages
       if (manualCash > 0 || manualStocks > 0 || manualCrypto > 0) {
-        const totals2 = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
-        let grandTotal2 = 0
+        const totals2 = {
+          cash: 0,
+          stocks: 0,
+          crypto: 0,
+          property: 0,
+          tokenised: 0,
+          bonds: 0,
+        };
+        let grandTotal2 = 0;
 
         // Include statement-based totals (same logic as above)
         for (const stmt of activeStmts) {
-          const bd = stmt.asset_class_breakdown ?? {}
+          const bd = stmt.asset_class_breakdown ?? {};
           for (const key of Object.keys(totals2)) {
-            const v = safeNumber(bd[key])
-            totals2[key] += v
-            grandTotal2 += v
+            const v = safeNumber(bd[key]);
+            totals2[key] += v;
+            grandTotal2 += v;
           }
         }
 
         // Add manual figures on top of statement totals
         if (manualCash > 0) {
-          totals2.cash += manualCash
-          grandTotal2 += manualCash
+          totals2.cash += manualCash;
+          grandTotal2 += manualCash;
         }
         if (manualStocks > 0) {
-          totals2.stocks += manualStocks
-          grandTotal2 += manualStocks
+          totals2.stocks += manualStocks;
+          grandTotal2 += manualStocks;
         }
         if (manualCrypto > 0) {
-          totals2.crypto += manualCrypto
-          grandTotal2 += manualCrypto
+          totals2.crypto += manualCrypto;
+          grandTotal2 += manualCrypto;
         }
 
         const breakdown2 = Object.entries(totals2)
           .filter(([, v]) => v > 0)
           .map(([key, v]) => ({
-            color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
-            label:   BREAKDOWN_LABELS[key] ?? key,
-            value:   fmtCurrency(v),
+            color: BREAKDOWN_COLORS[key] ?? "bg-slate-400",
+            label: BREAKDOWN_LABELS[key] ?? key,
+            value: fmtCurrency(v),
             percent: grandTotal2 > 0 ? Math.round((v / grandTotal2) * 100) : 0,
-          }))
+          }));
 
         if (breakdown2.length > 0) {
-          setNetWorthBreakdown(breakdown2)
+          setNetWorthBreakdown(breakdown2);
         }
       }
 
@@ -433,177 +538,211 @@ export default function useDashboardData() {
             month: item.month ?? item.month_key,
             value: item.value ?? 0,
           })),
-        )
+        );
       }
 
       // ════════════════════════════════════════════════════════════════════
       // TRANSACTIONS TAB view model (wallet + budget already set by applyWellness)
       // ════════════════════════════════════════════════════════════════════
       setTransactionsViewModel(
-        buildTransactionsViewModel({ statements, emailTransactions: emailTxItems, excludedFingerprints: excludedFpRef.current }),
-      )
+        buildTransactionsViewModel({
+          statements,
+          emailTransactions: emailTxItems,
+          excludedFingerprints: excludedFpRef.current,
+        }),
+      );
     } catch (err) {
-      console.error('useDashboardData: failed to fetch from Firestore', err)
-      setError(err)
+      console.error("useDashboardData: failed to fetch from Firestore", err);
+      setError(err);
       // Keep mock / previous data as fallback
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [uid, applyWellness])
+  }, [uid, applyWellness]);
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    fetchData();
+  }, [fetchData]);
 
-  // ── Real-time listener for emailTransactions (so Gmail sync updates UI) ──
+  // ── Real-time listener for Transactions (so Gmail sync updates UI) ──
   useEffect(() => {
-    if (!uid) return
-    const emailTxCol = collection(db, 'users', uid, 'emailTransactions')
-    const q = query(emailTxCol, orderBy('createdAt', 'desc'), limit(500))
+    if (!uid) return;
+    const emailTxCol = collection(db, "users", uid, "Transactions");
+    const q = query(emailTxCol, orderBy("createdAt", "desc"), limit(500));
     const unsub = onSnapshot(q, (snap) => {
-      const items = []
-      snap.forEach((d) => items.push({ id: d.id, ...d.data() }))
-      const filtered = items.filter((tx) => !tx.deleted)
-      emailTxRef.current = filtered
-      setEmailTransactions(filtered)
-      setRaw((prev) => ({ ...prev, emailTransactions: filtered }))
+      const items = [];
+      snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+      const filtered = items.filter((tx) => !tx.deleted);
+      emailTxRef.current = filtered;
+      setEmailTransactions(filtered);
+      setRaw((prev) => ({ ...prev, emailTransactions: filtered }));
       setTransactionsViewModel(
-        buildTransactionsViewModel({ statements: statementsRef.current, emailTransactions: filtered, excludedFingerprints: excludedFpRef.current }),
-      )
+        buildTransactionsViewModel({
+          statements: statementsRef.current,
+          emailTransactions: filtered,
+          excludedFingerprints: excludedFpRef.current,
+        }),
+      );
       // If we now have email txns, clear empty state
-      if (filtered.length > 0) setIsEmpty(false)
-    })
-    return unsub
-  }, [uid])
+      if (filtered.length > 0) setIsEmpty(false);
+    });
+    return unsub;
+  }, [uid]);
 
   // ── Real-time listener for wellness (so recalculateNetWorth updates overview + wallet + budget) ──
   useEffect(() => {
-    if (!uid) return
-    const wellnessRef = doc(db, 'users', uid, 'wellness', 'current')
+    if (!uid) return;
+    const wellnessRef = doc(db, "users", uid, "wellness", "current");
     const unsub = onSnapshot(wellnessRef, (snap) => {
-      if (!snap.exists()) return
-      const wellness = snap.data()
-      setRaw((prev) => ({ ...prev, wellness }))
-      applyWellness(wellness, profileRef.current, statementsRef.current, emailTxRef.current)
-    })
-    return unsub
-  }, [uid, applyWellness])
+      if (!snap.exists()) return;
+      const wellness = snap.data();
+      setRaw((prev) => ({ ...prev, wellness }));
+      applyWellness(
+        wellness,
+        profileRef.current,
+        statementsRef.current,
+        emailTxRef.current,
+      );
+    });
+    return unsub;
+  }, [uid, applyWellness]);
 
   // ── Real-time listener for net-worth history (keeps chart + series in sync) ──
   useEffect(() => {
-    if (!uid) return
-    const historyRef = collection(db, 'users', uid, 'history', 'net_worth', 'items')
-    const q = query(historyRef, orderBy('month_key', 'asc'))
+    if (!uid) return;
+    const historyRef = collection(
+      db,
+      "users",
+      uid,
+      "history",
+      "net_worth",
+      "items",
+    );
+    const q = query(historyRef, orderBy("month_key", "asc"));
     const unsub = onSnapshot(q, (snap) => {
-      const items = []
-      snap.forEach((d) => items.push(d.data()))
-      setRaw((prev) => ({ ...prev, netWorthHistory: items }))
+      const items = [];
+      snap.forEach((d) => items.push(d.data()));
+      setRaw((prev) => ({ ...prev, netWorthHistory: items }));
       if (items.length > 0) {
         setNetWorthSeries(
           items.map((item) => ({
             month: item.month ?? item.month_key,
             value: item.value ?? 0,
           })),
-        )
+        );
       }
-    })
-    return unsub
-  }, [uid])
+    });
+    return unsub;
+  }, [uid]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Manual holdings aggregation helpers (quantities per asset by type)
   // ═══════════════════════════════════════════════════════════════════════════
   const manualHoldings = useMemo(() => {
-    const profile = raw.profile
-    const investments = profile?.manual_accounts?.investments
-    const accounts = profile?.manual_accounts?.accounts
+    const profile = raw.profile;
+    const investments = profile?.manual_accounts?.investments;
+    const accounts = profile?.manual_accounts?.accounts;
 
     // Cash total from accounts
     const manualCash = Array.isArray(accounts)
       ? accounts.reduce((sum, acc) => sum + safeNumber(acc?.balance), 0)
-      : 0
+      : 0;
 
-    const stocks = new Map() // symbol -> totalQty
-    const crypto = new Map() // symbol -> totalQty
+    const stocks = new Map(); // symbol -> totalQty
+    const crypto = new Map(); // symbol -> totalQty
 
     if (Array.isArray(investments)) {
       for (const inv of investments) {
-        const lots = Array.isArray(inv?.lots) ? inv.lots : []
-        const qtyTotal = lots.reduce((s, l) => s + safeNumber(l?.quantity), 0)
-        const symbolRaw = (inv?.asset ?? '').trim()
-        if (!symbolRaw || qtyTotal <= 0) continue
-        const symbol = symbolRaw.toUpperCase()
-        const type = (inv?.type || '').toLowerCase()
-        if (type === 'crypto') {
-          crypto.set(symbol, (crypto.get(symbol) || 0) + qtyTotal)
+        const lots = Array.isArray(inv?.lots) ? inv.lots : [];
+        const qtyTotal = lots.reduce((s, l) => s + safeNumber(l?.quantity), 0);
+        const symbolRaw = (inv?.asset ?? "").trim();
+        if (!symbolRaw || qtyTotal <= 0) continue;
+        const symbol = symbolRaw.toUpperCase();
+        const type = (inv?.type || "").toLowerCase();
+        if (type === "crypto") {
+          crypto.set(symbol, (crypto.get(symbol) || 0) + qtyTotal);
         } else {
           // default and stocks_etfs bucket
-          stocks.set(symbol, (stocks.get(symbol) || 0) + qtyTotal)
+          stocks.set(symbol, (stocks.get(symbol) || 0) + qtyTotal);
         }
       }
     }
 
-    return { manualCash, stocks, crypto }
-  }, [raw.profile])
+    return { manualCash, stocks, crypto };
+  }, [raw.profile]);
 
   // Helper: rebuild net worth breakdown combining statements + manual cash + provided live valuations
   // Accepts an overrides object where you can pass per-asset-class live values, e.g. { stocks: number, crypto: number }
   // Backward compatible: also accepts { liveStocksValue, liveCryptoValue } keys.
-  const rebuildBreakdown = useCallback((overrides = {}) => {
-    const activeStmts = Array.isArray(raw.statements)
-      ? raw.statements.filter((s) => s.status === 'parsed' || s.status === 'approved')
-      : []
+  const rebuildBreakdown = useCallback(
+    (overrides = {}) => {
+      const activeStmts = Array.isArray(raw.statements)
+        ? raw.statements.filter(
+            (s) => s.status === "parsed" || s.status === "approved",
+          )
+        : [];
 
-    const totals = { cash: 0, stocks: 0, crypto: 0, property: 0, tokenised: 0, bonds: 0 }
-    let grand = 0
-    for (const stmt of activeStmts) {
-      const bd = stmt.asset_class_breakdown ?? {}
-      for (const key of Object.keys(totals)) {
-        const v = safeNumber(bd[key])
-        totals[key] += v
-        grand += v
+      const totals = {
+        cash: 0,
+        stocks: 0,
+        crypto: 0,
+        property: 0,
+        tokenised: 0,
+        bonds: 0,
+      };
+      let grand = 0;
+      for (const stmt of activeStmts) {
+        const bd = stmt.asset_class_breakdown ?? {};
+        for (const key of Object.keys(totals)) {
+          const v = safeNumber(bd[key]);
+          totals[key] += v;
+          grand += v;
+        }
       }
-    }
 
-    // Add manual cash
-    if (manualHoldings.manualCash > 0) {
-      totals.cash += manualHoldings.manualCash
-      grand += manualHoldings.manualCash
-    }
-
-    // Apply per-key live valuations if provided
-    const addByKey = {}
-    // New interface: direct keys like { stocks, crypto }
-    for (const k of Object.keys(totals)) {
-      const v = overrides?.[k]
-      if (Number.isFinite(v) && v > 0) addByKey[k] = Number(v)
-    }
-    // Backward compatibility with { liveStocksValue, liveCryptoValue }
-    if (overrides?.liveStocksValue != null && overrides.liveStocksValue > 0) {
-      addByKey.stocks = (addByKey.stocks || 0) + Number(overrides.liveStocksValue)
-    }
-    if (overrides?.liveCryptoValue != null && overrides.liveCryptoValue > 0) {
-      addByKey.crypto = (addByKey.crypto || 0) + Number(overrides.liveCryptoValue)
-    }
-
-    for (const [k, v] of Object.entries(addByKey)) {
-      if (k in totals) {
-        totals[k] += v
-        grand += v
+      // Add manual cash
+      if (manualHoldings.manualCash > 0) {
+        totals.cash += manualHoldings.manualCash;
+        grand += manualHoldings.manualCash;
       }
-    }
-    const breakdown = Object.entries(totals)
-      .filter(([, v]) => v > 0)
-      .map(([key, v]) => ({
-        color:   BREAKDOWN_COLORS[key] ?? 'bg-slate-400',
-        label:   BREAKDOWN_LABELS[key] ?? key,
-        value:   fmtCurrency(v),
-        percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
-      }))
-    if (breakdown.length > 0) {
-      setNetWorthBreakdown(breakdown)
-    }
-  }, [raw.statements, manualHoldings])
+
+      // Apply per-key live valuations if provided
+      const addByKey = {};
+      // New interface: direct keys like { stocks, crypto }
+      for (const k of Object.keys(totals)) {
+        const v = overrides?.[k];
+        if (Number.isFinite(v) && v > 0) addByKey[k] = Number(v);
+      }
+      // Backward compatibility with { liveStocksValue, liveCryptoValue }
+      if (overrides?.liveStocksValue != null && overrides.liveStocksValue > 0) {
+        addByKey.stocks =
+          (addByKey.stocks || 0) + Number(overrides.liveStocksValue);
+      }
+      if (overrides?.liveCryptoValue != null && overrides.liveCryptoValue > 0) {
+        addByKey.crypto =
+          (addByKey.crypto || 0) + Number(overrides.liveCryptoValue);
+      }
+
+      for (const [k, v] of Object.entries(addByKey)) {
+        if (k in totals) {
+          totals[k] += v;
+          grand += v;
+        }
+      }
+      const breakdown = Object.entries(totals)
+        .filter(([, v]) => v > 0)
+        .map(([key, v]) => ({
+          color: BREAKDOWN_COLORS[key] ?? "bg-slate-400",
+          label: BREAKDOWN_LABELS[key] ?? key,
+          value: fmtCurrency(v),
+          percent: grand > 0 ? Math.round((v / grand) * 100) : 0,
+        }));
+      if (breakdown.length > 0) {
+        setNetWorthBreakdown(breakdown);
+      }
+    },
+    [raw.statements, manualHoldings],
+  );
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Periodic price updates via yfinance-defi
@@ -615,82 +754,88 @@ export default function useDashboardData() {
 
   // Stocks (24h)
   useEffect(() => {
-    if (!uid) return
-    const symbols = Array.from(manualHoldings.stocks.keys())
-    if (symbols.length === 0) return
+    if (!uid) return;
+    const symbols = Array.from(manualHoldings.stocks.keys());
+    if (symbols.length === 0) return;
 
-    let cancelled = false
+    let cancelled = false;
 
     async function runOnce() {
       // Fetch all stock symbols; daily cadence so burst should be acceptable if list is small
       const [fxSgdUsd, ...prices] = await Promise.all([
         // Yahoo-style pair: 1 SGD = X USD → convert USD → SGD by dividing by this FX
-        getYfPrice('SGDUSD=X', { ttlMs: 60 * 60 * 1000 }),
+        getYfPrice("SGDUSD=X", { ttlMs: 60 * 60 * 1000 }),
         ...symbols.map((s) => getYfPrice(s, { ttlMs: 24 * 60 * 60 * 1000 })),
-      ])
-      if (cancelled) return
+      ]);
+      if (cancelled) return;
 
-      const fx = Number(fxSgdUsd)
-      const fxValid = Number.isFinite(fx) && fx > 0
+      const fx = Number(fxSgdUsd);
+      const fxValid = Number.isFinite(fx) && fx > 0;
 
       // Persist and compute valuation in SGD
-      let liveStocksValue = 0
-      await Promise.all(symbols.map(async (s, i) => {
-        const priceUsd = Number(prices[i])
-        if (!Number.isFinite(priceUsd) || priceUsd <= 0) return
-        const priceSgd = fxValid ? priceUsd / fx : priceUsd // fallback: treat as SGD if FX missing
-        const qty = manualHoldings.stocks.get(s) || 0
-        liveStocksValue += qty * priceSgd
-      }))
+      let liveStocksValue = 0;
+      await Promise.all(
+        symbols.map(async (s, i) => {
+          const priceUsd = Number(prices[i]);
+          if (!Number.isFinite(priceUsd) || priceUsd <= 0) return;
+          const priceSgd = fxValid ? priceUsd / fx : priceUsd; // fallback: treat as SGD if FX missing
+          const qty = manualHoldings.stocks.get(s) || 0;
+          liveStocksValue += qty * priceSgd;
+        }),
+      );
 
-      rebuildBreakdown({ stocks: liveStocksValue })
+      rebuildBreakdown({ stocks: liveStocksValue });
     }
 
-    runOnce()
-    const interval = setInterval(runOnce, 86_400_000) // 24h
+    runOnce();
+    const interval = setInterval(runOnce, 86_400_000); // 24h
     return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [uid, manualHoldings.stocks, rebuildBreakdown])
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [uid, manualHoldings.stocks, rebuildBreakdown]);
 
   // Crypto (1h)
   useEffect(() => {
-    if (!uid) return
-    const symbols = Array.from(manualHoldings.crypto.keys())
-    if (symbols.length === 0) return
-    let cancelled = false
+    if (!uid) return;
+    const symbols = Array.from(manualHoldings.crypto.keys());
+    if (symbols.length === 0) return;
+    let cancelled = false;
 
     async function runOnce() {
       // yfinance-defi expects crypto pairs like BTC-USD; append "-USD" if not already present
-      const pairSymbols = symbols.map((s) => (s.includes('-') ? s : `${s}-USD`))
+      const pairSymbols = symbols.map((s) =>
+        s.includes("-") ? s : `${s}-USD`,
+      );
       const [fxSgdUsd, ...prices] = await Promise.all([
-        getYfPrice('SGDUSD=X', { ttlMs: 60 * 60 * 1000 }),
+        getYfPrice("SGDUSD=X", { ttlMs: 60 * 60 * 1000 }),
         ...pairSymbols.map((ps) => getYfPrice(ps, { ttlMs: 60 * 60 * 1000 })),
-      ])
-      if (cancelled) return
-      const fx = Number(fxSgdUsd)
-      const fxValid = Number.isFinite(fx) && fx > 0
+      ]);
+      if (cancelled) return;
+      const fx = Number(fxSgdUsd);
+      const fxValid = Number.isFinite(fx) && fx > 0;
 
-      let liveCryptoValue = 0
-      await Promise.all(symbols.map(async (s, i) => {
-        const priceUsd = Number(prices[i])
-        if (!Number.isFinite(priceUsd) || priceUsd <= 0) return
-        const priceSgd = fxValid ? priceUsd / fx : priceUsd
-        const qty = manualHoldings.crypto.get(s) || 0
-        liveCryptoValue += qty * priceSgd
-      }))
-        console.log('liveCryptoValue', liveCryptoValue)
-      rebuildBreakdown({ crypto: liveCryptoValue })
+      let liveCryptoValue = 0;
+      await Promise.all(
+        symbols.map(async (s, i) => {
+          const priceUsd = Number(prices[i]);
+          if (!Number.isFinite(priceUsd) || priceUsd <= 0) return;
+          const priceSgd = fxValid ? priceUsd / fx : priceUsd;
+          const qty = manualHoldings.crypto.get(s) || 0;
+          liveCryptoValue += qty * priceSgd;
+        }),
+      );
+      console.log("liveCryptoValue", liveCryptoValue);
+      rebuildBreakdown({ crypto: liveCryptoValue });
     }
 
-    runOnce()
-    const interval = setInterval(runOnce, 3_600_000) // 1h
+    runOnce();
+    const interval = setInterval(runOnce, 3_600_000); // 1h
     return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [uid, manualHoldings.crypto, rebuildBreakdown])
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [uid, manualHoldings.crypto, rebuildBreakdown]);
 
   // ── Return ────────────────────────────────────────────────────────────
   return {
@@ -716,7 +861,7 @@ export default function useDashboardData() {
     // Excluded transaction fingerprints (persisted on user profile)
     excludedFingerprints: excludedFpRef.current,
     updateExcludedFingerprints(fps) {
-      excludedFpRef.current = fps
+      excludedFpRef.current = fps;
       // Rebuild transactions view model with updated exclusions
       setTransactionsViewModel(
         buildTransactionsViewModel({
@@ -724,12 +869,12 @@ export default function useDashboardData() {
           emailTransactions: emailTxRef.current,
           excludedFingerprints: fps,
         }),
-      )
+      );
     },
 
     // Raw Firestore data
     raw,
 
     refresh: fetchData,
-  }
+  };
 }
