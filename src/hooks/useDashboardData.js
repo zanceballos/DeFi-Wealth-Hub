@@ -398,7 +398,8 @@ export default function useDashboardData() {
       });
 
       // ── Detect empty state ────────────────────────────────────────────
-      // Also consider manual_accounts saved on the user document
+      // Only count actual data sources — not derived docs like wellness/history
+      // which can exist as stale artifacts from a previous session
       const manual = profile?.manual_accounts;
       const hasManual =
         (Array.isArray(manual?.accounts) && manual.accounts.length > 0) ||
@@ -406,9 +407,7 @@ export default function useDashboardData() {
       const hasEmailTx = emailTxItems.length > 0;
       const hasData =
         hasManual ||
-        !!wellness ||
         activeStmts.length > 0 ||
-        historyItems.length > 0 ||
         hasEmailTx;
       setIsEmpty(!hasData);
 
