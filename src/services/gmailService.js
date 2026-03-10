@@ -275,7 +275,7 @@ export async function syncGmailTransactions(uid) {
   if (messageIds.length === 0) return { newCount: 0 };
 
   // 2. Check which emails are already processed OR soft-deleted (dedup by emailId)
-  const txCol = collection(db, "users", uid, "Transactions");
+  const txCol = collection(db, "users", uid, "emailTransactions");
   const existingIds = new Set();
 
   // Firestore 'in' queries max 10 items per query

@@ -23,6 +23,7 @@ import {
 import { ingestStatementToFirestore } from "../../../services/statementIngestionService.js";
 import { useAuthContext } from "../../../hooks/useAuthContext.js";
 import { safeFetchJson } from "../../../lib/safeFetch.js";
+import CategoryBadge from "../../../components/ui/CategoryBadge.jsx";
 
 const API_BASE_URL =
   import.meta.env.VITE_PIPELINE_API_BASE_URL ??
@@ -1031,7 +1032,7 @@ export default function Overlay({
   const [errorMessage, setErrorMessage] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
   const [editRowId, setEditRowId] = useState(null);
-  const [editPayloadDraft, setEditPayloadDraft] = useState("");
+  const [editValues, setEditValues] = useState({});
   const [isSavingToFirebase, setIsSavingToFirebase] = useState(false);
   const [firebaseSaveResult, setFirebaseSaveResult] = useState(null);
   const [toast, setToast] = useState(null);
@@ -1048,7 +1049,7 @@ export default function Overlay({
     setErrorMessage("");
     setInfoMessage("");
     setEditRowId(null);
-    setEditPayloadDraft("");
+    setEditValues({});
     setIsSavingToFirebase(false);
     setFirebaseSaveResult(null);
     setToast(null);
@@ -1063,14 +1064,6 @@ export default function Overlay({
   }, [toast]);
 
   const showToast = (type, message) => setToast({ type, message });
-
-  const tableColumns = useMemo(() => {
-    const seen = new Set(REVIEWABLE_KEYS);
-    rows.forEach((row) =>
-      Object.keys(row.normalizedPayload || {}).forEach((k) => seen.add(k)),
-    );
-    return Array.from(seen).slice(0, 8);
-  }, [rows]);
 
   const filteredRows = useMemo(() => {
     if (filterState === "all") return rows;
@@ -1118,27 +1111,31 @@ export default function Overlay({
 
   const beginEditRow = (row) => {
     setEditRowId(row.id);
-    setEditPayloadDraft(JSON.stringify(row.normalizedPayload ?? {}, null, 2));
+    setEditValues({
+      amount: Math.abs(Number(row.normalizedPayload?.amount) || 0),
+      category: row.normalizedPayload?.category ?? "",
+    });
   };
 
   const saveEditRow = () => {
     if (!editRowId) return;
-    let parsedDraft;
-    try {
-      parsedDraft = JSON.parse(editPayloadDraft);
-    } catch {
-      setErrorMessage("Invalid JSON. Fix and try again.");
-      return;
-    }
     setRows((prev) =>
       prev.map((r) =>
         r.id === editRowId
-          ? { ...r, normalizedPayload: parsedDraft, state: "edited" }
+          ? {
+              ...r,
+              normalizedPayload: {
+                ...r.normalizedPayload,
+                amount: parseFloat(editValues.amount) || 0,
+                category: editValues.category,
+              },
+              state: "edited",
+            }
           : r,
       ),
     );
     setEditRowId(null);
-    setEditPayloadDraft("");
+    setEditValues({});
   };
 
   const recoverRowsFromArtifacts = async (currentJobId) => {
@@ -1720,172 +1717,179 @@ export default function Overlay({
 
             {/* ── Table ── */}
             <div className="overflow-x-auto">
-              <table className="min-w-full text-left">
-                <thead style={{ background: "#F8FAFF" }}>
-                  <tr style={{ borderBottom: "1px solid #E5EAF2" }}>
-                    {tableColumns.map((col) => (
-                      <th
-                        key={col}
-                        className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                      Score
-                    </th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                      Flags
-                    </th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                      Actions
-                    </th>
+              <table className="min-w-[860px] w-full text-left">
+                <thead className="sticky top-0 bg-white z-10">
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-5 py-3 text-xs text-gray-400 font-medium">Date</th>
+                    <th className="hidden sm:table-cell text-left px-4 py-3 text-xs text-gray-400 font-medium">Time</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Merchant</th>
+                    <th className="hidden md:table-cell text-left px-4 py-3 text-xs text-gray-400 font-medium">From</th>
+                    <th className="hidden md:table-cell text-left px-4 py-3 text-xs text-gray-400 font-medium">To</th>
+                    <th className="text-right px-4 py-3 text-xs text-gray-400 font-medium">Amount (SGD)</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Category</th>
+                    <th className="hidden lg:table-cell text-center px-4 py-3 text-xs text-gray-400 font-medium">Via</th>
+                    <th className="text-center px-3 py-3 text-xs text-gray-400 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row, i) => (
-                    <tr
-                      key={row.id}
-                      className={`group transition-colors ${
-                        i % 2 === 0 ? "bg-white" : "bg-[#FAFBFF]"
-                      } ${row.state === "rejected" ? "opacity-40" : ""} hover:bg-blue-50/40`}
-                      style={{ borderBottom: "1px solid #F0F4FA" }}
-                    >
-                      {tableColumns.map((col) => {
-                        const val = row.normalizedPayload?.[col];
-                        const isAmount = col === "amount";
-                        const isDirection = col === "direction";
-                        const dirColor =
-                          DIRECTION_COLOR[row.normalizedPayload?.direction] ??
-                          "text-gray-700";
-                        return (
-                          <td
-                            key={`${row.id}-${col}`}
-                            className="px-4 py-2.5 text-xs max-w-[160px]"
-                          >
-                            {isAmount ? (
-                              <span
-                                className={`font-semibold tabular-nums ${dirColor}`}
-                              >
-                                {row.normalizedPayload?.direction === "debit"
-                                  ? "−"
-                                  : "+"}
-                                {Number(val ?? 0).toLocaleString("en-SG", {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </span>
-                            ) : isDirection ? (
-                              <span
-                                className={`font-medium capitalize ${dirColor}`}
-                              >
-                                {String(val ?? "—")}
-                              </span>
-                            ) : (
-                              <span className="text-gray-700 line-clamp-1">
-                                {String(val ?? "—")}
-                              </span>
-                            )}
+                  {filteredRows.map((row) => {
+                    const p = row.normalizedPayload ?? {};
+                    const dir = p.direction ?? "debit";
+                    const rawDate = p.date ?? "";
+                    const tIdx = rawDate.indexOf("T");
+                    const dateStr = tIdx >= 0 ? rawDate.slice(0, tIdx) : rawDate;
+                    const timeStr = tIdx >= 0 ? rawDate.slice(tIdx + 1, tIdx + 6) : "—";
+                    const merchant = p.merchant ?? p.description ?? "—";
+                    const fromVal =
+                      dir === "credit"
+                        ? (p.counterparty ?? "—")
+                        : p.accountRef && p.accountRef !== "—"
+                          ? p.accountRef
+                          : merchant;
+                    const toVal =
+                      dir === "credit"
+                        ? p.accountRef && p.accountRef !== "—"
+                          ? p.accountRef
+                          : merchant
+                        : (p.counterparty ?? "—");
+                    const amt = Number(p.amount) || 0;
+                    const displayAmt = dir === "debit" ? -Math.abs(amt) : Math.abs(amt);
+                    const isEditing = editRowId === row.id;
+
+                    if (isEditing) {
+                      return (
+                        <tr key={row.id} className="border-b border-blue-100 bg-blue-50/40">
+                          <td className="px-5 py-2 text-sm text-gray-500 whitespace-nowrap">{dateStr}</td>
+                          <td className="hidden sm:table-cell px-4 py-2 text-sm text-gray-400">{timeStr}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{merchant}</td>
+                          <td className="hidden md:table-cell px-4 py-2 text-sm text-gray-500">{fromVal}</td>
+                          <td className="hidden md:table-cell px-4 py-2 text-sm text-gray-500">{toVal}</td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editValues.amount}
+                              onChange={(e) => setEditValues((v) => ({ ...v, amount: e.target.value }))}
+                              className="w-24 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:ring-2 focus:ring-teal-400/30"
+                            />
                           </td>
-                        );
-                      })}
-
-                      {/* Score */}
-                      <td className="px-4 py-2.5 text-xs">
-                        {row.rowConfidence == null ? (
-                          <span className="text-gray-300">—</span>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <div className="h-1.5 w-12 rounded-full bg-gray-100 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${Number(row.rowConfidence) >= 0.9 ? "bg-emerald-400" : "bg-amber-400"}`}
-                                style={{
-                                  width: `${Number(row.rowConfidence) * 100}%`,
-                                }}
-                              />
+                          <td className="px-4 py-2">
+                            <CategoryBadge
+                              category={editValues.category}
+                              onCategoryChange={(cat) => setEditValues((v) => ({ ...v, category: cat }))}
+                            />
+                          </td>
+                          <td className="hidden lg:table-cell px-4 py-2 text-center">
+                            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold bg-teal-100 text-teal-700">
+                              Statement
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={saveEditRow}
+                                className="p-1 rounded hover:bg-green-100 text-green-600"
+                                title="Save"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => { setEditRowId(null); setEditValues({}); }}
+                                className="p-1 rounded hover:bg-red-100 text-red-500"
+                                title="Cancel"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
                             </div>
-                            <span
-                              className={`tabular-nums font-medium ${Number(row.rowConfidence) >= 0.9 ? "text-emerald-600" : "text-amber-600"}`}
-                            >
-                              {Math.round(Number(row.rowConfidence) * 100)}%
-                            </span>
-                          </div>
-                        )}
-                      </td>
+                          </td>
+                        </tr>
+                      );
+                    }
 
-                      {/* Flags */}
-                      <td className="px-4 py-2.5 text-xs">
-                        {row.validationFlags?.length > 0 ? (
-                          row.validationFlags.map((f) => (
-                            <span
-                              key={f}
-                              className="inline-block rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 mr-1"
-                            >
-                              {f}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-gray-200">—</span>
-                        )}
-                      </td>
-
-                      {/* Status pill */}
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize ${STATE_PILL[row.state] ?? STATE_PILL.pending}`}
-                        >
-                          {row.state}
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => approveRow(row.id)}
-                            disabled={row.state === "approved"}
-                            title="Approve"
-                            className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-25 disabled:cursor-default"
-                          >
-                            <CheckCircle className="h-3 w-3" /> Approve
-                          </button>
-                          <button
-                            onClick={() => rejectRow(row.id)}
-                            disabled={row.state === "rejected"}
-                            title="Reject"
-                            className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-25 disabled:cursor-default"
-                          >
-                            <XCircle className="h-3 w-3" /> Reject
-                          </button>
-                          <button
-                            onClick={() => beginEditRow(row)}
-                            title="Edit"
-                            className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-50"
-                          >
-                            <Pencil className="h-3 w-3" /> Edit
-                          </button>
-                          {row.state !== "pending" && (
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`border-b border-gray-50 transition-colors ${
+                          row.state === "rejected"
+                            ? "opacity-40 bg-gray-50"
+                            : row.state === "approved" || row.state === "edited"
+                              ? "bg-emerald-50/30"
+                              : "hover:bg-gray-50/60"
+                        }`}
+                      >
+                        <td className="px-5 py-3 text-sm text-gray-500 whitespace-nowrap">{dateStr}</td>
+                        <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{timeStr}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 font-medium">
+                          {merchant !== "—" ? merchant : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="hidden md:table-cell px-4 py-3 text-sm text-gray-600">
+                          <span className="truncate max-w-[140px] block" title={fromVal}>
+                            {fromVal !== "—" ? fromVal : <span className="text-gray-300">—</span>}
+                          </span>
+                        </td>
+                        <td className="hidden md:table-cell px-4 py-3 text-sm text-gray-600">
+                          <span className="truncate max-w-[140px] block" title={toVal}>
+                            {toVal !== "—" ? toVal : <span className="text-gray-300">—</span>}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-3 text-sm font-semibold text-right whitespace-nowrap ${
+                          displayAmt >= 0 ? "text-teal-500" : "text-red-500"
+                        }`}>
+                          {displayAmt >= 0
+                            ? `+$${Math.abs(displayAmt).toFixed(2)}`
+                            : `-$${Math.abs(displayAmt).toFixed(2)}`}
+                        </td>
+                        <td className="px-4 py-3">
+                          <CategoryBadge category={p.category} />
+                        </td>
+                        <td className="hidden lg:table-cell px-4 py-3 text-center">
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold bg-teal-100 text-teal-700">
+                            Statement
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center justify-center gap-1">
                             <button
-                              onClick={() => skipRow(row.id)}
-                              title="Reset to pending"
-                              className="rounded-lg border border-gray-200 bg-white p-1.5 text-gray-400 transition hover:bg-gray-50"
+                              onClick={() => approveRow(row.id)}
+                              disabled={row.state === "approved"}
+                              title="Approve"
+                              className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-25 disabled:cursor-default"
                             >
-                              <SkipForward className="h-3 w-3" />
+                              <CheckCircle className="h-3 w-3" /> Approve
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            <button
+                              onClick={() => rejectRow(row.id)}
+                              disabled={row.state === "rejected"}
+                              title="Reject"
+                              className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-25 disabled:cursor-default"
+                            >
+                              <XCircle className="h-3 w-3" /> Reject
+                            </button>
+                            <button
+                              onClick={() => beginEditRow(row)}
+                              title="Edit"
+                              className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-50"
+                            >
+                              <Pencil className="h-3 w-3" /> Edit
+                            </button>
+                            {row.state !== "pending" && (
+                              <button
+                                onClick={() => skipRow(row.id)}
+                                title="Reset to pending"
+                                className="rounded-lg border border-gray-200 bg-white p-1.5 text-gray-400 transition hover:bg-gray-50"
+                              >
+                                <SkipForward className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td
-                        colSpan={tableColumns.length + 4}
-                        className="py-16 text-center"
-                      >
+                      <td colSpan={9} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <FileText className="h-8 w-8 text-gray-200" />
                           <p className="text-sm font-medium text-gray-400">
@@ -1907,46 +1911,7 @@ export default function Overlay({
         </div>
       </div>
 
-      {/* ── Edit modal ── */}
-      {editRowId && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-5">
-          <div
-            className="w-full max-w-xl rounded-2xl border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "#E5EAF2" }}
-          >
-            <h4 className="mb-0.5 text-sm font-black text-gray-900">
-              Edit Transaction
-            </h4>
-            <p className="mb-4 text-xs text-gray-400">
-              Modify the JSON payload. Changes mark this row as <em>edited</em>.
-            </p>
-            <textarea
-              value={editPayloadDraft}
-              onChange={(e) => setEditPayloadDraft(e.target.value)}
-              className="h-64 w-full rounded-xl border bg-gray-50 p-4 font-mono text-xs text-gray-800 outline-none focus:border-[#2081C3] focus:ring-2 focus:ring-[#2081C3]/10"
-              style={{ borderColor: "#D0D9E8" }}
-              spellCheck={false}
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setEditRowId(null);
-                  setEditPayloadDraft("");
-                }}
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveEditRow}
-                className="rounded-xl bg-[#2081C3] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1a6faa]"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </>,
     document.body,
   );
