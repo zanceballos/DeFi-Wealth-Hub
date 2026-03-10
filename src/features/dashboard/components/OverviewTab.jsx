@@ -1,4 +1,5 @@
-import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield} from 'lucide-react'
+import { useState } from 'react'
+import {Sparkles, Wallet, Activity, PiggyBank, Droplets, CandlestickChart, ShieldAlert, ChevronRight, Upload, FileText, TrendingUp, Shield, Pencil} from 'lucide-react'
 import InfoTooltip from '../../../components/ui/InfoTooltip.jsx'
 import {
     Line,
@@ -7,11 +8,13 @@ import {
     Tooltip,
 } from 'recharts'
 import MetricCard, {BreakdownRow, PillarRow} from '../../../components/ui/MetricCard.jsx'
+import {EmptyState} from "./EmptyState.jsx";
+import { useFirestore } from '../../../hooks/useFirestore.js'
+import { useAuthContext } from '../../../hooks/useAuthContext.js'
+import { recalculateNetWorth } from '../../../services/financialDataService.js'
 
-
-const SPENT = 1927.90
 const CARD_CLASS =
-    'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-5'
+    'rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)] p-4 sm:p-5'
 
 
 function CurrencyTooltip({active, payload, label}) {
@@ -29,155 +32,6 @@ function CurrencyTooltip({active, payload, label}) {
     )
 }
 
-
-function WellnessRing({score}) {
-    const radius = 44
-    const circumference = 2 * Math.PI * radius
-    const progress = (score / 100) * circumference
-
-    return (
-        <svg className="h-28 w-28" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r={radius} stroke="#E5E7EB" strokeWidth="6" fill="none"/>
-            <circle
-                cx="60"
-                cy="60"
-                r={radius}
-                stroke="#2081C3"
-                strokeWidth="6"
-                fill="none"
-                strokeLinecap="round"
-                strokeDasharray={`${progress} ${circumference}`}
-                transform="rotate(-90 60 60)"
-            />
-        </svg>
-    )
-}
-
-
-const ONBOARDING_STEPS = [
-    {
-        icon: Upload,
-        title: 'Upload a statement',
-        description: 'Import a bank, brokerage, or crypto statement to get started.',
-        color: 'bg-brand-primary/10 text-brand-primary',
-    },
-    {
-        icon: FileText,
-        title: 'Review parsed data',
-        description: 'We\'ll extract transactions automatically — approve, edit, or reject each row.',
-        color: 'bg-emerald-50 text-emerald-600',
-    },
-    {
-        icon: TrendingUp,
-        title: 'See your dashboard',
-        description: 'Your net worth, wellness score, and savings rate will populate instantly.',
-        color: 'bg-amber-50 text-amber-600',
-    },
-    {
-        icon: Shield,
-        title: 'Track over time',
-        description: 'Upload more statements each month to build your financial trend history.',
-        color: 'bg-violet-50 text-violet-600',
-    },
-]
-
-
-function EmptyState({ userName, todayLabel, onUploadClick }) {
-    return (
-        <div className="space-y-8">
-            <header className="px-1">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                    Welcome, {userName} 👋
-                </h1>
-                <p className="mt-1 text-sm text-slate-500">{todayLabel}</p>
-            </header>
-
-            <div className="relative rounded-2xl border border-dashed border-slate-300 bg-linear-to-br from-white to-slate-50 p-8 text-center shadow-sm sm:p-12">
-                <div className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-brand-primary/5 blur-2xl" />
-                <div className="pointer-events-none absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-brand-accent/5 blur-2xl" />
-
-                <div className="relative mx-auto max-w-md">
-                    <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary/10">
-                        <Wallet className="h-8 w-8 text-brand-primary" />
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                        Your dashboard is ready
-                    </h2>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                        Upload your first financial statement to unlock your personalised net worth,
-                        wellness score, and savings insights.
-                    </p>
-                    <button
-                        type="button"
-                        onClick={onUploadClick}
-                        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-primary px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/60 focus-visible:ring-offset-2"
-                    >
-                        <Upload className="h-4 w-4" />
-                        Upload your first statement
-                    </button>
-                </div>
-            </div>
-
-            <div>
-                <h3 className="mb-4 px-1 text-sm font-semibold uppercase tracking-wide text-slate-400">
-                    How it works
-                </h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {ONBOARDING_STEPS.map((step, i) => {
-                        const Icon = step.icon
-                        return (
-                            <article
-                                key={step.title}
-                                className="group relative rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
-                            >
-                                <span className="absolute top-3 right-4 text-xs font-bold text-slate-200">
-                                    {i + 1}
-                                </span>
-                                <div className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${step.color}`}>
-                                    <Icon className="h-5 w-5" />
-                                </div>
-                                <h4 className="text-sm font-semibold text-slate-800">{step.title}</h4>
-                                <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-                                    {step.description}
-                                </p>
-                            </article>
-                        )
-                    })}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-                {[
-                    { title: 'Net worth', icon: Wallet, accent: 'bg-emerald-400' },
-                    { title: 'Wellness score', icon: Activity, accent: 'bg-brand-primary' },
-                    { title: 'Monthly savings', icon: PiggyBank, accent: 'bg-brand-accent' },
-                ].map((card) => {
-                    const Icon = card.icon
-                    return (
-                        <div
-                            key={card.title}
-                            className="relative rounded-2xl border border-slate-200/60 bg-slate-50/60 p-5"
-                        >
-                            <span className={`absolute inset-y-0 left-0 w-1 rounded-l-2xl ${card.accent} opacity-30`} />
-                            <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-300">
-                                    <Icon className="h-4 w-4" />
-                                </div>
-                                <span className="text-sm font-semibold text-slate-400">{card.title}</span>
-                            </div>
-                            <div className="mt-4 space-y-2">
-                                <div className="h-6 w-28 animate-pulse rounded-lg bg-slate-200/60" />
-                                <div className="h-3 w-20 animate-pulse rounded bg-slate-200/40" />
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
-        </div>
-    )
-}
-
-
 function OverviewTab({
     userProfile,
     heroStats,
@@ -188,7 +42,33 @@ function OverviewTab({
     todayLabel,
     isEmpty = false,
     onUploadClick,
+    onFinished,
+    onRefresh,
 }) {
+    const { refreshProfile } = useAuthContext()
+    const { update } = useFirestore('users')
+
+    const [editingIncome, setEditingIncome] = useState(false)
+    const [incomeInput,   setIncomeInput]   = useState('')
+    const [savingIncome,  setSavingIncome]  = useState(false)
+
+    async function handleSaveIncome() {
+        const val = parseFloat(incomeInput)
+        if (isNaN(val) || val <= 0) { setEditingIncome(false); return }
+        setSavingIncome(true)
+        try {
+            await update(userProfile.uid, { monthly_income: val })
+            await refreshProfile()
+            await recalculateNetWorth(userProfile.uid)
+            if (onRefresh) onRefresh()
+        } catch (err) {
+            console.error('Failed to save income:', err)
+        } finally {
+            setSavingIncome(false)
+            setEditingIncome(false)
+            setIncomeInput('')
+        }
+    }
 
     if (isEmpty) {
         return (
@@ -196,6 +76,7 @@ function OverviewTab({
                 userName={userProfile.name?.split(' ')[0] ?? 'there'}
                 todayLabel={todayLabel}
                 onUploadClick={onUploadClick}
+                onFinished={onFinished}
             />
         )
     }
@@ -211,8 +92,8 @@ function OverviewTab({
         <div className="space-y-6">
             {/* ── Greeting header ── */}
             <header className="px-1">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                    Good morning, {userProfile.name.split(' ')[0]} 👋
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
+                    Welcome Back, {userProfile.name.split(' ')[0]} 👋
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
                     {todayLabel} · {userProfile.location} · {userProfile.riskProfile} risk profile
@@ -282,14 +163,61 @@ function OverviewTab({
                         Breakdown
                     </p>
                     <div className="space-y-2.5">
+                        {/* ── Editable income row ── */}
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-500">Monthly income</span>
-                            <span className="font-semibold text-slate-800">{savingsDetail.income}</span>
+                            {editingIncome ? (
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-slate-400">SGD</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        autoFocus
+                                        value={incomeInput}
+                                        onChange={(e) => setIncomeInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSaveIncome()
+                                            if (e.key === 'Escape') setEditingIncome(false)
+                                        }}
+                                        className="w-24 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-right text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-brand-primary"
+                                    />
+                                    <button
+                                        onClick={handleSaveIncome}
+                                        disabled={savingIncome}
+                                        className="rounded-lg bg-brand-primary px-2 py-1 text-[10px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        {savingIncome ? '…' : 'Save'}
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingIncome(false)}
+                                        className="text-[10px] text-slate-400 hover:text-slate-600"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        setIncomeInput(userProfile.monthly_income?.toString() ?? '')
+                                        setEditingIncome(true)
+                                    }}
+                                    className="group flex items-center gap-1 font-semibold text-slate-800 transition hover:text-brand-primary"
+                                    title="Click to edit"
+                                >
+                                    {savingsDetail.income}
+                                    <Pencil className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
+                                </button>
+                            )}
                         </div>
+                        {/* ── Auto-derived expenses row ── */}
                         <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">Monthly expenses</span>
+                            <span className="flex items-center gap-1 text-slate-500">
+                                This month's spending
+                                <InfoTooltip text="Auto-calculated from debit transactions in your uploaded statements for the current calendar month." />
+                            </span>
                             <span className="font-semibold text-slate-800">{savingsDetail.expenses}</span>
                         </div>
+                        {/* ── Net savings ── */}
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-500">Net savings</span>
                             <span className="font-bold text-emerald-600">{savingsDetail.net}</span>

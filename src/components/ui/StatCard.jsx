@@ -22,13 +22,13 @@ export default function StatCard({
   children,
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 shadow-sm">
       <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5">
         {title}
         {tooltip && <InfoTooltip text={tooltip} />}
       </p>
       {value !== undefined && (
-        <p className={`text-3xl font-bold mt-2 ${valueColor}`}>{value}</p>
+        <p className={`text-2xl font-bold mt-2 sm:text-3xl ${valueColor}`}>{value}</p>
       )}
       {changeText && (
         <p className={`text-sm mt-1 ${changeColor}`}>{changeText}</p>

@@ -19,6 +19,7 @@ import {
   addDoc,
   getDoc,
   getDocs,
+  deleteDoc,
   updateDoc,
   serverTimestamp,
 } from 'firebase/firestore'
@@ -177,8 +178,13 @@ export async function saveParsedStatement(uid, statementId, parsedStatement = {}
 
 /**
  * Recompute the wellness snapshot for a user by reading all their statement
- * documents and the user profile. Saves the result at
- * /users/{uid}/wellness/current and returns it.
+ * documents, email transactions, manual accounts, and the user profile.
+ * Saves the result at /users/{uid}/wellness/current and returns it.
+ *
+ * Data sources aggregated:
+ *   A — manual_accounts (cash balances, investments on user doc)
+ *   B — /statements (PDF/CSV uploads)
+ *   C — /emailTransactions (auto-parsed Gmail emails)
  *
  * @param {string} uid
  * @param {object} [options]          – reserved for future flags
@@ -186,13 +192,15 @@ export async function saveParsedStatement(uid, statementId, parsedStatement = {}
  */
 // eslint-disable-next-line no-unused-vars
 export async function recomputeWellness(uid, _options = {}) {
+  if (!uid) return null
+
   // ---- Read user profile ----
   const userSnap = await getDoc(doc(db, 'users', uid))
   const userProfile = userSnap.exists() ? userSnap.data() : {}
   const monthlyIncome = Number(userProfile.monthly_income) || 0
   const monthlyExpenses = Number(userProfile.monthly_expenses) || 0
 
-  // ---- Read all statements ----
+  // ---- Read all statements (Source B) ----
   const statementsSnap = await getDocs(collection(db, 'users', uid, 'statements'))
   const statements = []
   statementsSnap.forEach((d) => statements.push({ id: d.id, ...d.data() }))
@@ -200,7 +208,20 @@ export async function recomputeWellness(uid, _options = {}) {
   // Only consider parsed or approved statements
   const active = statements.filter((s) => s.status === 'parsed' || s.status === 'approved')
 
-  // ---- Aggregate key metrics ----
+  // ---- Read email transactions (Source C) ----
+  const emailTxSnap = await getDocs(collection(db, 'users', uid, 'emailTransactions'))
+  const emailTransactions = []
+  emailTxSnap.forEach((d) => emailTransactions.push({ id: d.id, ...d.data() }))
+  const approvedEmailTx = emailTransactions.filter(
+    (tx) => tx.status === 'approved' && !tx.deleted,
+  )
+
+  // ---- Manual accounts (Source A) ----
+  const manual = userProfile.manual_accounts ?? {}
+  const manualAccounts = Array.isArray(manual.accounts) ? manual.accounts : []
+  const manualInvestments = Array.isArray(manual.investments) ? manual.investments : []
+
+  // ---- Aggregate key metrics across all 3 sources ----
   let totalNetWorth = 0
   let totalCash = 0
   let totalCrypto = 0
@@ -210,6 +231,7 @@ export async function recomputeWellness(uid, _options = {}) {
 
   const UNREGULATED_SOURCES = new Set(['crypto', 'other'])
 
+  // Source B: statements
   for (const stmt of active) {
     const contribution = Number(stmt.net_worth_contribution) || 0
     totalNetWorth += contribution
@@ -225,6 +247,45 @@ export async function recomputeWellness(uid, _options = {}) {
     }
   }
 
+  // Source A: manual cash accounts
+  for (const acc of manualAccounts) {
+    const bal = Number(acc.balance) || 0
+    totalCash += bal
+    totalNetWorth += bal
+    if (bal > largestContribution) largestContribution = bal
+  }
+
+  // Source A: manual investments
+  for (const inv of manualInvestments) {
+    const lots = Array.isArray(inv?.lots) ? inv.lots : []
+    const assetTotal = lots.reduce((sum, lot) => {
+      const qty = Number(lot?.quantity) || 0
+      const avg = Number(lot?.averageCost) || 0
+      return sum + qty * avg
+    }, 0)
+    if (assetTotal <= 0) continue
+
+    totalNetWorth += assetTotal
+    if (assetTotal > largestContribution) largestContribution = assetTotal
+
+    const t = (inv?.type || '').toLowerCase()
+    if (t === 'crypto') {
+      totalCrypto += assetTotal
+      totalUnregulated += assetTotal
+    }
+    // stocks/other: counted toward net worth but not crypto/unregulated
+  }
+
+  // Source C: approved email transactions (net inflow/outflow affects cash position)
+  let emailNetCash = 0
+  for (const tx of approvedEmailTx) {
+    const amt = Number(tx.amount) || 0
+    emailNetCash += amt // positive = credit, negative = debit
+  }
+  // Email net cash flow adjusts total cash (can be negative)
+  totalCash += emailNetCash
+  totalNetWorth += emailNetCash
+
   const cashBufferMonths =
     monthlyExpenses > 0 ? parseFloat((totalCash / monthlyExpenses).toFixed(2)) : 0
 
@@ -236,6 +297,10 @@ export async function recomputeWellness(uid, _options = {}) {
   const largestPositionPct = parseFloat(
     safePercent(largestContribution, totalNetWorth).toFixed(2),
   )
+
+  // Count total distinct sources for diversification
+  const totalSourceCount = active.length + manualAccounts.length + manualInvestments.length
+
   const savingsRatePct =
     monthlyIncome > 0
       ? parseFloat(
@@ -250,9 +315,9 @@ export async function recomputeWellness(uid, _options = {}) {
     cashBufferMonths >= 6 ? 100 : (cashBufferMonths / 6) * 100,
   )
 
-  // Diversification: penalise if largest position > 50% or < 3 statements
+  // Diversification: penalise if largest position > 50% or < 3 sources
   const diversificationScore = clampScore(
-    100 - largestPositionPct + Math.min(active.length * 10, 30),
+    100 - largestPositionPct + Math.min(totalSourceCount * 10, 30),
   )
 
   // Risk match: lower crypto & unregulated exposure → higher score
@@ -320,6 +385,7 @@ export async function recomputeWellness(uid, _options = {}) {
  * @returns {Promise<object>}           – the written history entry
  */
 export async function upsertNetWorthHistory(uid, date, netWorthValue) {
+  if (!uid) return null
   const d = date instanceof Date ? date : new Date(date)
   const monthKey = formatMonthKey(d)
   const monthLabel = formatMonthLabel(d)
@@ -335,6 +401,57 @@ export async function upsertNetWorthHistory(uid, date, netWorthValue) {
   await setDoc(entryRef, entry)
 
   return entry
+}
+
+// ---------------------------------------------------------------------------
+// 4b. recalculateNetWorth (convenience — recomputes wellness + upserts history)
+// ---------------------------------------------------------------------------
+
+/**
+ * Recompute wellness and upsert net-worth history for the current month.
+ * Idempotent — safe to call multiple times.
+ *
+ * @param {string} uid
+ * @returns {Promise<{wellness: object, historyEntry: object}>}
+ */
+export async function recalculateNetWorth(uid) {
+  if (!uid) return { wellness: null, historyEntry: null }
+  const wellness = await recomputeWellness(uid)
+  const historyEntry = await upsertNetWorthHistory(
+    uid,
+    new Date(),
+    wellness?.key_metrics?.net_worth ?? 0,
+  )
+  return { wellness, historyEntry }
+}
+
+// ---------------------------------------------------------------------------
+// 4c. resetUserToEmpty — clear wellness + history when all data is deleted
+// ---------------------------------------------------------------------------
+
+/**
+ * Reset a user to an empty/default state by deleting wellness and net-worth
+ * history documents. Called when all data sources are removed.
+ *
+ * @param {string} uid
+ * @returns {Promise<void>}
+ */
+export async function resetUserToEmpty(uid) {
+  if (!uid) return
+
+  // Delete /wellness/current
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'wellness', 'current'))
+  } catch { /* may not exist */ }
+
+  // Delete all /history/net_worth/items/*
+  try {
+    const historyRef = collection(db, 'users', uid, 'history', 'net_worth', 'items')
+    const historySnap = await getDocs(historyRef)
+    const deletes = []
+    historySnap.forEach((d) => deletes.push(deleteDoc(d.ref)))
+    await Promise.all(deletes)
+  } catch { /* may not exist */ }
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@
  *   icon           (Component) — optional lucide icon
  *   children       (ReactNode) — hover detail panel content
  */
+import { useState } from 'react'
 import {ChevronRight} from 'lucide-react'
 
 export default function MetricCard({
@@ -21,14 +22,20 @@ export default function MetricCard({
   icon: Icon,
   children,
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   return (
-    <article className="group relative">
+    <article
+      className="group relative"
+      onClick={() => children && setExpanded((v) => !v)}
+    >
       {/* ── Main card ── */}
       <div
         className={
-          'relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 ' +
+          'relative overflow-visible rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 ' +
           'shadow-[0_2px_12px_rgba(15,23,42,0.04)] ' +
           'transition-all duration-300 ease-out ' +
+          (children ? 'cursor-pointer ' : '') +
           'group-hover:-translate-y-1 group-hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] ' +
           'group-hover:border-sky-300/60'
         }
@@ -43,7 +50,7 @@ export default function MetricCard({
             <p className="text-[13px] font-medium tracking-wide text-slate-400 uppercase">
               {title}
             </p>
-            <p className="mt-2 text-[28px] font-bold leading-tight tracking-tight text-slate-900">
+            <p className="mt-2 text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]">
               {value}
             </p>
             {caption && (
@@ -64,21 +71,23 @@ export default function MetricCard({
         {/* "View details" affordance */}
         {children && (
           <span className="mt-3 flex items-center gap-1 text-xs font-medium text-slate-300 transition-colors group-hover:text-brand-primary">
-            View details
-            <ChevronRight className="h-3 w-3" />
+            {expanded ? 'Hide details' : 'View details'}
+            <ChevronRight className={`h-3 w-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
           </span>
         )}
       </div>
 
-      {/* ── Hover detail panel ── */}
+      {/* ── Detail panel — visible on hover (desktop) or tap (mobile) ── */}
       {children && (
         <div
           className={
-            'pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-80 -translate-x-1/2 ' +
+            'absolute left-1/2 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] -translate-x-1/2 ' +
             'rounded-2xl border border-slate-200 bg-white p-5 ' +
             'shadow-[0_12px_40px_rgba(15,23,42,0.12)] ' +
-            'opacity-0 invisible translate-y-2 ' +
             'transition-all duration-300 ease-out ' +
+            (expanded
+              ? 'pointer-events-auto opacity-100 visible translate-y-0 '
+              : 'pointer-events-none opacity-0 invisible translate-y-2 ') +
             'group-hover:pointer-events-auto group-hover:opacity-100 group-hover:visible group-hover:translate-y-0'
           }
         >

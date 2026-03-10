@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -7,63 +7,108 @@ import {
   GoogleAuthProvider,
   signOut,
   updateProfile,
-} from 'firebase/auth'
-import { auth } from '../lib/firebase'
+  sendPasswordResetEmail,
+} from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export function useAuth() {
-  const [user, setUser]       = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser)
-      setLoading(false)
-    })
-    return unsubscribe
-  }, [])
+      setUser(firebaseUser);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
 
   async function login(email, password) {
-    setError(null)
+    setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      await signInWithEmailAndPassword(auth, email, password);
+      return { ok: true };
     } catch (err) {
-      setError(err.message)
+      setError(err.message);
+      return { ok: false, error: err };
     }
   }
 
   async function register(email, password, name) {
-    setError(null)
+    setError(null);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
       if (name) {
-        await updateProfile(cred.user, { displayName: name })
+        await updateProfile(cred.user, { displayName: name });
       }
-      // Re-set user so downstream hooks (useUser) pick up the displayName
-      setUser({ ...auth.currentUser })
+      setUser({ ...auth.currentUser });
+      return { ok: true };
     } catch (err) {
-      setError(err.message)
+      setError(err.message);
+      return { ok: false, error: err };
     }
   }
 
   async function loginWithGoogle() {
-    setError(null)
+    setError(null);
     try {
-      const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      return { ok: true };
     } catch (err) {
-      setError(err.message)
+      setError(err.message);
+      return { ok: false, error: err };
+    }
+  }
+
+  async function resetPassword(email) {
+    setError(null);
+
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail) {
+      const err = {
+        code: "auth/missing-email",
+        message: "Please enter your email address.",
+      };
+      setError(err.message);
+      return { ok: false, error: err };
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      const err = {
+        code: "auth/invalid-email",
+        message: "Please enter a valid email address.",
+      };
+      setError(err.message);
+      return { ok: false, error: err };
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      return { ok: true };
+    } catch (err) {
+      setError(err.message);
+      return { ok: false, error: err };
     }
   }
 
   async function logout() {
-    // Clear advisory session cache so next user doesn't see stale data
-    sessionStorage.removeItem('dwh_advisory')
-    sessionStorage.removeItem('dwh_advisory_payload')
-    sessionStorage.removeItem('dwh_advisory_uid')
-    await signOut(auth)
+    sessionStorage.removeItem("dwh_advisory");
+    sessionStorage.removeItem("dwh_advisory_payload");
+    sessionStorage.removeItem("dwh_advisory_uid");
+    await signOut(auth);
   }
 
-  return { user, loading, error, login, register, loginWithGoogle, logout }
+  return {
+    user,
+    loading,
+    error,
+    login,
+    register,
+    loginWithGoogle,
+    resetPassword,
+    logout,
+  };
 }

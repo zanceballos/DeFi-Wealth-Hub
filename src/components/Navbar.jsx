@@ -142,7 +142,7 @@ function Navbar() {
                         onClick={() => setIsMobileNavOpen((open) => !open)}
                         aria-label="Toggle navigation"
                         aria-expanded={isMobileNavOpen}
-                        className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-lg font-semibold text-slate-700 transition hover:bg-slate-100 sm:hidden"
+                        className="flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-lg font-semibold text-slate-700 transition hover:bg-slate-100 sm:hidden"
                     >
                         {isMobileNavOpen ? '✕' : '☰'}
                     </button>

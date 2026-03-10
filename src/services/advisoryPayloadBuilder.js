@@ -31,7 +31,7 @@ function activeStatements(statements) {
  *
  * Every field has a safe default so missing data never causes a crash.
  *
- * @param {{ profile?: object, statements?: object[], wellness?: object, netWorthHistory?: object[] }} data
+ * @param {{ profile?: object, statements?: object[], wellness?: object, netWorthHistory?: object[], emailTransactions?: object[] }} data
  * @returns {object}
  */
 export function buildAdvisoryPayload({
@@ -39,6 +39,7 @@ export function buildAdvisoryPayload({
   statements,
   wellness,
   netWorthHistory,
+  emailTransactions,
 } = {}) {
   const active = activeStatements(statements)
 
@@ -48,6 +49,29 @@ export function buildAdvisoryPayload({
     risk_profile:     safeStr(profile?.risk_profile ?? profile?.riskProfile, 'moderate'),
     monthly_income:   safe(profile?.monthly_income),
     monthly_expenses: safe(profile?.monthly_expenses),
+  }
+
+  // ── Manual accounts ─────────────────────────────────────────────────
+  const manual = profile?.manual_accounts ?? {}
+  const manualAccounts = Array.isArray(manual.accounts) ? manual.accounts : []
+  const manualInvestments = Array.isArray(manual.investments) ? manual.investments : []
+
+  const manualCashTotal = manualAccounts.reduce((s, a) => s + safe(a?.balance), 0)
+  const manualInvestmentTotal = manualInvestments.reduce((s, inv) => {
+    const lots = Array.isArray(inv?.lots) ? inv.lots : []
+    return s + lots.reduce((ls, l) => ls + safe(l?.quantity) * safe(l?.averageCost), 0)
+  }, 0)
+
+  const manualAccountsSummary = {
+    cash_total: manualCashTotal,
+    investment_total: manualInvestmentTotal,
+    accounts_count: manualAccounts.length,
+    investments_count: manualInvestments.length,
+    institutions: [...new Set(manualAccounts.map((a) => a?.institution).filter(Boolean))],
+    investment_assets: manualInvestments.map((inv) => ({
+      asset: inv?.asset ?? '',
+      type: inv?.type ?? '',
+    })),
   }
 
   // ── Wellness ────────────────────────────────────────────────────────
@@ -108,6 +132,31 @@ export function buildAdvisoryPayload({
     regulated_platforms: regulatedPlatforms,
     unregulated_platforms: unregulatedPlatforms,
     asset_breakdown: assetBreakdown,
+    manual_accounts: manualAccountsSummary,
+  }
+
+  // ── Email transactions summary ──────────────────────────────────────
+  const emailTxs = Array.isArray(emailTransactions) ? emailTransactions : []
+  const approvedEmail = emailTxs.filter((tx) => tx.status === 'approved' && !tx.deleted)
+  let emailInflow = 0
+  let emailOutflow = 0
+  const emailSources = new Set()
+  const emailCategories = {}
+  for (const tx of approvedEmail) {
+    const amt = safe(tx.amount)
+    if (amt >= 0) emailInflow += amt
+    else emailOutflow += Math.abs(amt)
+    if (tx.source) emailSources.add(tx.source)
+    const cat = (tx.category ?? 'unknown').toLowerCase()
+    emailCategories[cat] = (emailCategories[cat] ?? 0) + Math.abs(amt)
+  }
+
+  const emailSummary = {
+    total_transactions: approvedEmail.length,
+    total_inflow: emailInflow,
+    total_outflow: emailOutflow,
+    sources: [...emailSources],
+    category_breakdown: emailCategories,
   }
 
   // ── Trends ──────────────────────────────────────────────────────────
@@ -121,5 +170,5 @@ export function buildAdvisoryPayload({
 
   const trends = { net_worth_history: history }
 
-  return { user, wellness: wellnessPayload, portfolio, trends }
+  return { user, wellness: wellnessPayload, portfolio, email_transactions: emailSummary, trends }
 }
