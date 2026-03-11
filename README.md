@@ -35,7 +35,7 @@ Built at **NTU** by Nicholas, Izzan, Kang, Li Zhong, and Zheng Rong.
 
 ## 🚀 Quick Start
 ```bash
-git clone [https://github.com/nicolotan/DeFi-Wealth-Hub.git](https://github.com/nicolotan/DeFi-Wealth-Hub.git)
+git clone [https://github.com/zanceballos/DeFi-Wealth-Hub.git](https://github.com/nicolotan/DeFi-Wealth-Hub.git)
 cd DeFi-Wealth-Hub
 npm install
 npm run dev
